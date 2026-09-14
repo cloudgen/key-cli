@@ -125,7 +125,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
 |------|------------------------|
 | **Product / binary** | `sshd-cli` (`APP_NAME`) |
 | **Implementation file** | Repo root `./sshd-cli` |
-| **Dispatcher** | `app_main` routes `version-check` → `ver_check`; `self-update` → `inst_self_update`; `self-uninstall` → `inst_self_uninstall`; `about` → `app_about` |
+| **Dispatcher** | `app_main` routes `version-check` → `ver_check`; `self-update` → `inst_self_update`; `self-uninstall` → `inst_self_uninstall`; argv `version` → `app_version`; `about` → `app_about`. TTY **82** / typed `version` → `app_about` (**INC-20260914-001**). |
 | **Install orchestrator SSOT** | `inst_perform_install` (+ prepare / download with or without checksum / atomic install) |
 | **Version compare** | `ver_gt` (pure POSIX); local version via `inst_get_version` |
 | **Install presence** | `inst_is_installed` |

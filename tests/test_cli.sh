@@ -2,8 +2,8 @@
 # tests/test_cli.sh — CLI surface (local-only; no network)
 # =============================================================================
 # Primary REQs: requirement-shell-cli-interface, requirement-shell-cli-zero-arguments,
-# requirement-shell-output-requirements, requirement-shell-cli-storage,
-# requirement-domain-sshd (TP-SSHD-01, TP-SSHD-03..08)
+# requirement-shell-cli-default-interaction, requirement-shell-output-requirements,
+# requirement-shell-cli-storage, requirement-domain-sshd (TP-SSHD-01, TP-SSHD-03..08)
 # TP family: TP-CLI-* · TP-SSHD-01 · TP-SSHD-03..08
 # =============================================================================
 
@@ -54,6 +54,7 @@ run_test_cli() {
     assert_contains "TP-CLI-04 help dns" "$_out" "dns"
     assert_contains "TP-CLI-04 help ssh" "$_out" "ssh ["
     assert_contains "TP-CLI-04 help download" "$_out" "download ["
+    assert_contains "TP-CLI-04 help upload" "$_out" "upload ["
     assert_contains "TP-CLI-04 help backup-config" "$_out" "backup-config"
     assert_contains "TP-CLI-04 help sync-config" "$_out" "sync-config"
     assert_contains "TP-CLI-04 help sync-from-remote" "$_out" "sync-from-remote"
@@ -116,6 +117,8 @@ run_test_cli() {
     assert_contains "TP-CLI-14 client dns short" "$_out" "dns"
     assert_contains "TP-CLI-14 client ssh row 12" "$_out" "12."
     assert_contains "TP-CLI-14 client download row 13" "$_out" "13."
+    assert_contains "TP-CLI-14 client upload row 14" "$_out" "14."
+    assert_contains "TP-CLI-14 client upload short" "$_out" "upload"
     assert_contains "TP-CLI-14 client backup-config row 15" "$_out" "15."
     assert_contains "TP-CLI-14 client sync-config row 16" "$_out" "16."
     assert_contains "TP-CLI-14 client Back 0" "$_out" "0. Back"
@@ -125,6 +128,33 @@ run_test_cli() {
     assert_not_contains "TP-CLI-14 no numbered auth-keys row" "$_out" "List login keys"
     assert_file_missing "TP-CLI-14 interactive empty argv does not install" "${CI_USER_BIN}/${APP_NAME}"
     assert_not_contains "TP-CLI-14 interactive empty argv is not help Usage" "$_out" "Usage:"
+    ci_cleanup_env
+
+    # TP-CLI-21 TTY 82 / typed version run about; argv version stays thin (INC-20260914-001)
+    ci_isolated_env
+    _out=$(printf '%s\n' '8' '82' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 sh "${SCRIPT}" 2>&1)
+    _ec=$?
+    assert_eq "TP-CLI-21 TTY 82 exit 0" 0 "$_ec"
+    assert_contains "TP-CLI-21 TTY 82 about title" "$_out" "About / Diagnostics"
+    assert_contains "TP-CLI-21 TTY 82 current user" "$_out" "Current user:"
+    assert_contains "TP-CLI-21 TTY 82 useful commands" "$_out" "Useful commands:"
+    assert_not_contains "TP-CLI-21 TTY 82 is not thin version banner" "$_out" "${APP_NAME} version ${PRODUCT_VERSION}"
+    _out=$(printf '%s\n' '8' 'version' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 sh "${SCRIPT}" 2>&1)
+    _ec=$?
+    assert_eq "TP-CLI-21 typed version exit 0" 0 "$_ec"
+    assert_contains "TP-CLI-21 typed version about title" "$_out" "About / Diagnostics"
+    assert_contains "TP-CLI-21 typed version current user" "$_out" "Current user:"
+    _out=$(sh "${SCRIPT}" version 2>/dev/null)
+    _ec=$?
+    assert_eq "TP-CLI-21 argv version exit 0" 0 "$_ec"
+    assert_contains "TP-CLI-21 argv version mentions VERSION" "$_out" "${PRODUCT_VERSION}"
+    assert_not_contains "TP-CLI-21 argv version is not about title" "$_out" "About / Diagnostics"
+    _out=$(sh "${SCRIPT}" --json version 2>/dev/null)
+    assert_contains "TP-CLI-21 argv version json type" "$_out" '"type":"version"'
+    _src=$(cat "${SCRIPT}")
+    assert_contains "TP-CLI-21 menu 82 routes about" "${_src}" '82|version) app_about'
+    assert_contains "TP-CLI-21 typed version routes about" "${_src}" 'version) app_about'
+    unset _src
     ci_cleanup_env
 
     # TP-CLI-15 status ends with a recommended ssh connect line

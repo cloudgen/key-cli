@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/sshd-cli`  
-**Product VERSION:** 1.19.2  
-**Last plan update:** 2026-09-13  
-**Last suite run:** PASS=668 FAIL=0 SKIP=0 (2026-09-13)
+**Product VERSION:** 1.21.0  
+**Last plan update:** 2026-09-14  
+**Last suite run:** PASS=739 FAIL=0 SKIP=0 (2026-09-14)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
@@ -31,7 +31,7 @@ Status: **have** = automated today · **todo** = needed · **optional** · **n/a
 | this-login `~/.ssh/config` dns-ip list / show / set / add / delete / unset | have | TP-DNS-01..49 |
 | OpenSSH client `ssh` Host pick | have | TP-SSH-01..09 |
 | remote folder `download` tar.gz into cwd | have | TP-DL-01..17 |
-| local folder `upload` tar.gz onto a Host | **todo** | TP-UL-01..18 |
+| local folder `upload` tar.gz onto a Host | have | TP-UL-01..18 |
 | Automatic companion link on install (file://) | have | TP-CSUM-01 |
 | Backup / restore / sudoers emit | n/a | Absent by design (not a backup product) |
 | Online curl against public GitHub | n/a | Core suite stays offline; channel is `file://` in CI |
@@ -79,7 +79,8 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-CFG-16 | `--json` type/host fields | test_config_backup | requirement-shell-config-backup | **have** |
 | TP-CFG-17 | TTY sudoers submenu unknown choice warns and redisplays | test_config_backup | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
 | TP-CLI-13 | backup/restore/sudoers verbs unknown | test_cli | requirement-shell-cli-interface | **have** |
-| TP-CLI-14 | empty argv interactive → front 1/2/8/9 (no install); client 11 dns / 12 ssh / 13 download | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments · requirement-domain-sshd | **have** |
+| TP-CLI-14 | empty argv interactive → front 1/2/8/9 (no install); client 11 dns / 12 ssh / 13 download / 14 upload | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments · requirement-domain-sshd | **have** |
+| TP-CLI-21 | TTY **82** / typed `version` run about; argv `version` stays thin JSON type | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-interface · **INC-20260914-001** | **have** |
 | TP-CLI-15 | status Connect: live ssh -p user@ipv4; no `<this-host>` | test_cli | requirement-domain-sshd | **have** |
 
 ### TP-SSHD (domain start: Termux daemonize / Linux systemd unit)
@@ -197,24 +198,24 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 
 | TP-ID | Intent | Suite | Primary requirement(s) | Status |
 |-------|--------|-------|------------------------|--------|
-| TP-UL-01 | help lists `upload` | test_ssh_download | requirement-domain-sshd · requirement-shell-cli-interface | **todo** |
-| TP-UL-02 | non-interactive upload streams local tar.gz; remote extracts under `"$HOME"` | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-03 | remembers local folder for that Host | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-04 | TTY numbered previous local folder | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-05 | TTY type a new local path | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-06 | missing folder operand fail-closed | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-07 | refuse shell metacharacters in folder | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-08 | JSON upload one object | test_ssh_download | requirement-domain-sshd · requirement-shell-output-requirements | **todo** |
-| TP-UL-09 | `Host *` is not an upload row | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-10 | TTY upload default user `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-11 | TTY upload user override `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-12 | TTY invalid user fail-closed; Next names upload | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-13 | TTY `""` omits `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **todo** |
-| TP-UL-14 | local `~/folder` accepted; this-login HOME for local tar; remote dest `"$HOME"` not this-login path | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-15 | `~` alone fail-closed | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-16 | `~user/path` fail-closed | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-17 | missing local directory fail-closed | test_ssh_download | requirement-domain-sshd | **todo** |
-| TP-UL-18 | TTY menu numbers upload **8** | test_ssh_download | requirement-domain-sshd | **todo** |
+| TP-UL-01 | help lists `upload` | test_ssh_download | requirement-domain-sshd · requirement-shell-cli-interface | **have** |
+| TP-UL-02 | non-interactive upload streams local tar.gz; remote extracts under `"$HOME"` | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-03 | remembers local folder for that Host | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-04 | TTY numbered previous local folder | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-05 | TTY type a new local path | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-06 | missing folder operand fail-closed | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-07 | refuse shell metacharacters in folder | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-08 | JSON upload one object | test_ssh_download | requirement-domain-sshd · requirement-shell-output-requirements | **have** |
+| TP-UL-09 | `Host *` is not an upload row | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-10 | TTY upload default user `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-11 | TTY upload user override `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-12 | TTY invalid user fail-closed; Next names upload | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-13 | TTY `""` omits `-l` | test_ssh_download | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-UL-14 | local `~/folder` accepted; this-login HOME for local tar; remote dest `"$HOME"` not this-login path | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-15 | `~` alone fail-closed | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-16 | `~user/path` fail-closed | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-17 | missing local directory fail-closed | test_ssh_download | requirement-domain-sshd | **have** |
+| TP-UL-18 | TTY client menu numbers upload **14** | test_ssh_download | requirement-domain-sshd · requirement-shell-cli-default-interaction | **have** |
 
 ### TP-LC (local lifecycle)
 

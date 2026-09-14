@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.21.0] - 2026-09-14
+
+### Added
+
+- **`upload [N|name] [folder]`**: tar.gz a **local** folder over ssh and extract it under the remote ssh user’s home (`tar xzf - -C "$HOME"`). TTY: Host pick, then **user [default]** (same as `ssh` / `download`), then numbered previous **local** folders or a typed path. Local `~/folder` expands against this login `HOME` for tar only; remote dest stays `"$HOME"`. Memory: `~/.local/sshd-cli/upload-folders` (mode 600), not the download file. TTY client row **14**. Tests **TP-UL-01** .. **TP-UL-18**.
+
+## [1.20.1] - 2026-09-14
+
+### Fixed
+
+- TTY self-management **82 version** (and typed `version` on a numbered board) runs **about** diagnostics instead of reprinting the header version. Argv `sshd-cli version` and `--json version` stay a one-liner (`"type":"version"`). Tests **TP-CLI-21**. Incident **INC-20260914-001**.
+
 ## [1.20.0] - 2026-09-14
 
 ### Changed

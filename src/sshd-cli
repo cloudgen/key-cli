@@ -56,8 +56,8 @@ APP_NAME="sshd-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: simplify Termux to install and run OpenSSH sshd (status/start/stop/port/keys/dns) plus self-install; Linux host deposit of ~/.ssh/config (backup-config / sync-config / sync-from-remote).}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="1.20.0"
-: "${VERSION:=1.20.0}"
+VERSION="1.21.0"
+: "${VERSION:=1.21.0}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -7061,9 +7061,299 @@ sshd_cmd_download() {
     return 0
 }
 
+# =============================================================================
+# sshd_cmd_upload — local folder tar.gz onto a Host (extract under remote home)
+# =============================================================================
+#
+# Inverse of download. Host pick + TTY user [default] (same as ssh).
+# Folder is local (this login). ~/folder expands against this login HOME for
+# tar only. Remote dest is "$HOME" for the ssh user — not this login HOME.
+# Memory: ${HOME}/.local/${APP_NAME}/upload-folders (mode 0600), not download-folders.
+#
+# ALIGNMENT: requirement-domain-sshd.md · requirement-shell-cli-interface.md
+#            requirement-shell-interactive-vs-noninteractive.md
+# Last updated: 2026-09-14
+# =============================================================================
+
+sshd_upload_folders_path() {
+    : "${APP_NAME:=sshd-cli}"
+    if [ -z "${PERSISTENT_STORAGE_DIR:-}" ]; then
+        PERSISTENT_STORAGE_DIR=$(util_resolve_persistent_storage)
+        export PERSISTENT_STORAGE_DIR
+    fi
+    printf '%s' "${PERSISTENT_STORAGE_DIR}/upload-folders"
+}
+
+sshd_upload_folders_list() {
+    _uf_dns="${1-}"
+    _uf_path=$(sshd_upload_folders_path)
+    if [ ! -f "${_uf_path}" ] || [ -z "${_uf_dns}" ]; then
+        unset _uf_dns _uf_path
+        return 0
+    fi
+    awk -F '\t' -v d="${_uf_dns}" '$1==d && $2!="" {print $2}' "${_uf_path}"
+    unset _uf_dns _uf_path
+}
+
+sshd_upload_folders_save() {
+    _uf_dns="${1-}"
+    _uf_folder="${2-}"
+    if [ -z "${_uf_dns}" ] || [ -z "${_uf_folder}" ]; then
+        unset _uf_dns _uf_folder
+        return 1
+    fi
+    _uf_path=$(sshd_upload_folders_path)
+    _uf_tmp=$(mktemp -t "${APP_NAME}.ulfolders.XXXXXX") || return 1
+    printf '%s\t%s\n' "${_uf_dns}" "${_uf_folder}" > "${_uf_tmp}"
+    _uf_n=1
+    if [ -f "${_uf_path}" ]; then
+        while IFS= read -r _uf_line || [ -n "${_uf_line}" ]; do
+            _uf_d="${_uf_line%%	*}"
+            _uf_f="${_uf_line#*	}"
+            if [ "${_uf_d}" = "${_uf_dns}" ] && [ "${_uf_f}" = "${_uf_folder}" ]; then
+                continue
+            fi
+            if [ "${_uf_d}" = "${_uf_dns}" ]; then
+                _uf_n=$((_uf_n + 1))
+                if [ "${_uf_n}" -gt 20 ]; then
+                    continue
+                fi
+            fi
+            if [ -n "${_uf_line}" ]; then
+                printf '%s\n' "${_uf_line}" >> "${_uf_tmp}"
+            fi
+        done < "${_uf_path}"
+    fi
+    if command -v install >/dev/null 2>&1; then
+        if ! install -m 0600 "${_uf_tmp}" "${_uf_path}"; then
+            rm -f "${_uf_tmp}"
+            unset _uf_dns _uf_folder _uf_path _uf_tmp _uf_n _uf_line _uf_d _uf_f
+            return 1
+        fi
+    else
+        if ! mv "${_uf_tmp}" "${_uf_path}"; then
+            rm -f "${_uf_tmp}"
+            unset _uf_dns _uf_folder _uf_path _uf_tmp _uf_n _uf_line _uf_d _uf_f
+            return 1
+        fi
+        chmod 0600 "${_uf_path}" 2>/dev/null || true
+    fi
+    rm -f "${_uf_tmp}"
+    unset _uf_dns _uf_folder _uf_path _uf_tmp _uf_n _uf_line _uf_d _uf_f
+    return 0
+}
+
+sshd_upload_norm_folder() {
+    _nf="${1-}"
+    _nf=$(printf '%s' "${_nf}" | tr -d '\r')
+    while [ "${#_nf}" -gt 1 ]; do
+        case "${_nf}" in
+            */) _nf="${_nf%/}" ;;
+            *) break ;;
+        esac
+    done
+    printf '%s' "${_nf}"
+    unset _nf
+}
+
+# ~/folder → this login HOME/folder for local tar. Other paths unchanged.
+sshd_upload_local_path() {
+    : "${HOME:=/tmp}"
+    _up="${1-}"
+    _up_rest="${_up#\~}"
+    if [ "${_up}" != "${_up_rest}" ]; then
+        case "${_up_rest}" in
+            /*)
+                printf '%s' "${HOME}/${_up_rest#/}"
+                ;;
+            *)
+                printf '%s' "${_up}"
+                ;;
+        esac
+    else
+        printf '%s' "${_up}"
+    fi
+    unset _up _up_rest
+}
+
+sshd_upload_validate_folder() {
+    _vf="${1-}"
+    if [ -z "${_vf}" ]; then
+        out_die "upload needs a local folder. Next: ${APP_NAME} upload <n|name> ./folder"
+    fi
+    case "${_vf}" in
+        -*)
+            out_die "Local folder '${_vf}' is not allowed. Use an absolute or relative path, or ~/folder (not ., .., /, or ~ alone). Next: ${APP_NAME} upload <n|name> ./folder"
+            ;;
+    esac
+    _vf_body="${_vf}"
+    _vf_rest="${_vf#\~}"
+    if [ "${_vf}" != "${_vf_rest}" ]; then
+        case "${_vf_rest}" in
+            /*)
+                _vf_body="${_vf_rest#/}"
+                if [ -z "${_vf_body}" ]; then
+                    out_die "Local folder '${_vf}' is not allowed. Use ~/folder for this login home (not ~ alone). Next: ${APP_NAME} upload <n|name> ./folder"
+                fi
+                ;;
+            *)
+                out_die "Local folder '${_vf}' is not allowed. Use ~/folder for this login home (not ~ alone or ~user). Next: ${APP_NAME} upload <n|name> ./folder"
+                ;;
+        esac
+    fi
+    if [ "${_vf}" = "." ] || [ "${_vf}" = ".." ] || [ "${_vf}" = "/" ]; then
+        out_die "Local folder '${_vf}' is not allowed. Use an absolute or relative path, or ~/folder (not ., .., /, or ~ alone). Next: ${APP_NAME} upload <n|name> ./folder"
+    fi
+    case "${_vf_body}" in
+        *';'*|*'|'*|*'&'*|'$'*|'`'*|*"\\"*|*'('*|*')'*|*'<'*|*'>'*|'*'*|'?'*|*'!'*|*'~'*|*'#'*)
+            out_die "Local folder '${_vf}' has a character that is not allowed. Next: ${APP_NAME} upload <n|name> ./folder"
+            ;;
+    esac
+    unset _vf _vf_body _vf_rest
+}
+
+# Sets SSHD_UL_FOLDER. MUST run in current shell (do-not-capture-read).
+sshd_upload_walk_folder() {
+    _uw_dns="$1"
+    SSHD_UL_FOLDER=""
+    while true; do
+        _uw_i=0
+        _uw_keys=""
+        while IFS= read -r _uw_p || [ -n "${_uw_p}" ]; do
+            [ -n "${_uw_p}" ] || continue
+            _uw_i=$((_uw_i + 1))
+            if [ -z "${_uw_keys}" ]; then
+                _uw_keys="${_uw_p}"
+            else
+                _uw_keys="${_uw_keys}
+${_uw_p}"
+            fi
+            out_plain "${_uw_i}. ${_uw_p}"
+        done <<EOF
+$(sshd_upload_folders_list "${_uw_dns}")
+EOF
+        if [ "${_uw_i}" -eq 0 ]; then
+            out_msg_n "Local folder to upload (absolute, relative, or ~/folder on this login): "
+        else
+            out_info "Previous local folders for ${_uw_dns}. Choose a number, or type a folder path."
+            out_msg_n "Folder: "
+        fi
+        _uw_pick=""
+        read -r _uw_pick || true
+        if [ -z "${_uw_pick}" ]; then
+            _uw_name="${_uw_dns}"
+            unset _uw_dns _uw_i _uw_keys _uw_p _uw_pick
+            out_die "upload needs a local folder. Next: ${APP_NAME} upload ${_uw_name} ./folder"
+        fi
+        _uw_is_num=0
+        case "${_uw_pick}" in
+            *[!0-9]*) _uw_is_num=0 ;;
+            *) _uw_is_num=1 ;;
+        esac
+        if [ "${_uw_is_num}" -eq 1 ] && [ "${_uw_i}" -gt 0 ]; then
+            if [ "${_uw_pick}" -ge 1 ] && [ "${_uw_pick}" -le "${_uw_i}" ]; then
+                SSHD_UL_FOLDER=$(printf '%s\n' "${_uw_keys}" | awk -v n="${_uw_pick}" 'NR==n {print; exit}')
+                unset _uw_dns _uw_i _uw_keys _uw_p _uw_pick _uw_is_num
+                return 0
+            fi
+            out_warn "Unknown folder choice '${_uw_pick}'. Choose a number from the list, or type a folder path."
+            continue
+        fi
+        SSHD_UL_FOLDER="${_uw_pick}"
+        unset _uw_dns _uw_i _uw_keys _uw_p _uw_pick _uw_is_num
+        return 0
+    done
+}
+
+sshd_cmd_upload() {
+    : "${JSON:=0}"
+    : "${TTY:=0}"
+    : "${QUIET:=0}"
+    : "${SSHD_CLI_SSH:=}"
+    : "${APP_NAME:=sshd-cli}"
+    : "${HOME:=/tmp}"
+    _sel="${1-}"
+    _folder="${2-}"
+    if [ -z "${_sel}" ]; then
+        if sshd_dns_can_prompt; then
+            if sshd_dns_pick_host "upload"; then
+                _sel="${DNS_PICK_SEL}"
+            else
+                unset _sel _folder
+                return 0
+            fi
+        else
+            out_die "upload needs a number or Host name and a local folder. Next: ${APP_NAME} dns list, then ${APP_NAME} upload <n|name> ./folder"
+        fi
+    fi
+    _row=$(sshd_dns_lookup "${_sel}") || out_die "No Host entry '${_sel}' in $(sshd_dns_config_path). Next: ${APP_NAME} dns list"
+    sshd_dns_load_row "${_row}"
+    _dns="${DNS_R_DNS}"
+    _n="${DNS_R_N}"
+    _user=""
+    if sshd_dns_can_prompt; then
+        sshd_ssh_walk_user "${DNS_R_USER}"
+        _user="${SSHD_SSH_USER}"
+        sshd_ssh_validate_user "${_user}" "upload <n|name> ./folder"
+    fi
+    if [ -z "${_folder}" ]; then
+        if sshd_dns_can_prompt; then
+            sshd_upload_walk_folder "${_dns}"
+            _folder="${SSHD_UL_FOLDER}"
+        else
+            out_die "upload needs a local folder. Next: ${APP_NAME} upload ${_dns} ./folder"
+        fi
+    fi
+    _folder=$(sshd_upload_norm_folder "${_folder}")
+    sshd_upload_validate_folder "${_folder}"
+    _local=$(sshd_upload_local_path "${_folder}")
+    if [ ! -d "${_local}" ]; then
+        out_die "Local folder '${_folder}' is not a directory. Next: ${APP_NAME} upload ${_dns} ./folder"
+    fi
+    _base=$(basename "${_local}")
+    _dir=$(dirname "${_local}")
+    if [ -z "${_base}" ] || [ "${_base}" = "/" ] || [ "${_base}" = "." ] || [ "${_base}" = ".." ]; then
+        out_die "Local folder '${_folder}' is not allowed. Next: ${APP_NAME} upload ${_dns} ./folder"
+    fi
+    _bin=$(sshd_ssh_cmd)
+    if [ -z "${_bin}" ] || [ ! -x "${_bin}" ]; then
+        out_die "Cannot upload: OpenSSH client not found. Next: install openssh-client, then ${APP_NAME} upload ${_dns} ${_folder}"
+    fi
+    if ! command -v tar >/dev/null 2>&1; then
+        out_die "Cannot upload: tar not found. Next: install tar, then ${APP_NAME} upload ${_dns} ${_folder}"
+    fi
+    _remote_cmd='tar xzf - -C "$HOME"'
+    _dest="\$HOME/${_base}"
+    out_info "Uploading ${_folder} to ${_dns} as ${_user:-${DNS_R_USER:-this login}} (extract under that ssh user home as ${_base})"
+    if [ -n "${_user}" ]; then
+        _next_ssh="ssh -l ${_user} ${_dns}"
+        if ! tar czf - -C "${_dir}" "${_base}" | "${_bin}" -o BatchMode=yes -o ConnectTimeout=15 -l "${_user}" "${_dns}" "${_remote_cmd}"; then
+            out_die "Cannot upload: ssh ${_dns} failed. Next: ${_next_ssh}, then ${APP_NAME} upload ${_dns} ${_folder}"
+        fi
+    else
+        _next_ssh="ssh ${_dns}"
+        if ! tar czf - -C "${_dir}" "${_base}" | "${_bin}" -o BatchMode=yes -o ConnectTimeout=15 "${_dns}" "${_remote_cmd}"; then
+            out_die "Cannot upload: ssh ${_dns} failed. Next: ${_next_ssh}, then ${APP_NAME} upload ${_dns} ${_folder}"
+        fi
+    fi
+    sshd_upload_folders_save "${_dns}" "${_folder}" || true
+    if [ "${JSON}" -eq 1 ]; then
+        _json_user="${_user}"
+        if [ -z "${_json_user}" ]; then
+            _json_user="${DNS_R_USER}"
+        fi
+        out_json "upload" "ok" "n" "${_n}" "dns" "${_dns}" "user" "${_json_user}" "folder" "${_folder}" "destination" "${_dest}"
+    else
+        out_success "Uploaded ${_folder} to ${_dns} (extract under that ssh user home as ${_base})"
+    fi
+    unset _sel _folder _row _dns _n _user _local _base _dir _bin _remote_cmd _dest _json_user _next_ssh
+    return 0
+}
+
 # Last updated: 2026-09-14
 # ALIGNMENT: requirement-shell-cli-default-interaction
 # Return 0 if ${_choice} was a typed leaf (caller leaves this layer).
+# TTY typed `version` runs about (INC-20260914-001). Argv `version` stays app_version.
 sshd_menu_typed_leaf() {
     case "${_choice}" in
         status) sshd_cmd_status; return 0 ;;
@@ -7073,6 +7363,7 @@ sshd_menu_typed_leaf() {
         dns) sshd_cmd_dns; return 0 ;;
         ssh) sshd_cmd_ssh; return 0 ;;
         download) sshd_cmd_download; return 0 ;;
+        upload) sshd_cmd_upload; return 0 ;;
         backup-config) sshd_cmd_backup_config; return 0 ;;
         sync-config) sshd_cmd_sync_config; return 0 ;;
         sudoers) sshd_cmd_sudoers_menu; return 0 ;;
@@ -7089,7 +7380,7 @@ sshd_menu_typed_leaf() {
         wake-lock) sshd_cmd_wake_lock; return 0 ;;
         wake-unlock) sshd_cmd_wake_unlock; return 0 ;;
         install) inst_perform_install; return 0 ;;
-        version) app_version; return 0 ;;
+        version) app_about; return 0 ;;
         about) app_about; return 0 ;;
         version-check) ver_check; return 0 ;;
         self-update) inst_self_update; return 0 ;;
@@ -7112,6 +7403,7 @@ sshd_cmd_menu_client() {
         out_menu_choice "11" "dns" "this login ~/.ssh/config Host list"
         out_menu_choice "12" "ssh" "OpenSSH client to a Host from this login ~/.ssh/config"
         out_menu_choice "13" "download" "tar.gz a remote folder into this directory"
+        out_menu_choice "14" "upload" "tar.gz a local folder onto a Host (extract under that ssh user home)"
         if [ "${_show_cfg}" -eq 1 ]; then
             out_menu_choice "15" "backup-config" "copy this login ~/.ssh/config to /var/sshd-cli"
             out_menu_choice "16" "sync-config" "copy /var/sshd-cli/config into this login ~/.ssh/config"
@@ -7131,10 +7423,7 @@ sshd_cmd_menu_client() {
             11|dns) sshd_cmd_dns; continue ;;
             12|ssh) sshd_cmd_ssh; continue ;;
             13|download) sshd_cmd_download; continue ;;
-            14)
-                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
-                continue
-                ;;
+            14|upload) sshd_cmd_upload; continue ;;
             15)
                 if [ "${_show_cfg}" -eq 1 ]; then
                     sshd_cmd_backup_config
@@ -7252,7 +7541,7 @@ sshd_cmd_menu_self() {
     while true; do
         out_info "**${APP_NAME}**(*${VERSION}*) — self-management"
         out_menu_choice "81" "install" "place ${APP_NAME}; ensure rc + Termux openssh/termux-auth; start sshd"
-        out_menu_choice "82" "version" "show current version"
+        out_menu_choice "82" "version" "show version and detailed diagnostics (about)"
         out_menu_choice "83" "about" "show detailed diagnostics"
         out_menu_choice "84" "version-check" "compare local vs remote version"
         out_menu_choice "85" "self-update" "update ${APP_NAME} to a newer remote version"
@@ -7266,7 +7555,7 @@ sshd_cmd_menu_self() {
         fi
         case "${_choice}" in
             81|install) inst_perform_install; continue ;;
-            82|version) app_version; continue ;;
+            82|version) app_about; continue ;;
             83|about) app_about; continue ;;
             84|version-check) ver_check; continue ;;
             85|self-update) inst_self_update; continue ;;
@@ -7554,7 +7843,7 @@ app_help() {
 
     out_info "Self-management (this login):"
     out_plain "  install              Place ${APP_NAME}; ensure rc + Termux openssh/termux-auth; start sshd"
-    out_plain "  version              Show current version"
+    out_plain "  version              Show current version (TTY menu 82 runs about)"
     out_plain "  about                Show detailed diagnostics"
     out_plain "  version-check        Compare local vs remote version (needs SCRIPT_URL)"
     out_plain "  self-update          Update ${APP_NAME} to a newer remote version"
@@ -7575,6 +7864,7 @@ app_help() {
     out_plain "  dns [list|show N|edit N|set N …|add …|delete N|unset N field …]  This login ~/.ssh/config Host list (dns-ip; as Termux / identity-file / Old OpenSSH; unset drops extra settings, not dns or ip)"
     out_plain "  ssh [N|name]         OpenSSH client to a Host from this login ~/.ssh/config (TTY: numbered pick, then user with default)"
     out_plain "  download [N|name] [folder]  tar.gz a remote folder over ssh and extract it here (TTY: pick Host, then user with default, then numbered previous folders or type a path; ~/folder allowed)"
+    out_plain "  upload [N|name] [folder]  tar.gz a local folder over ssh and extract it under the remote login home (TTY: pick Host, then user with default, then numbered previous local folders or type a path; ~/folder is this login)"
     out_plain "  backup-config        Copy this login ~/.ssh/config into /var/sshd-cli (passwordless sudo sshd-cli backup-config after sudoer-adm)"
     out_plain "  sync-config          Copy /var/sshd-cli/config into this login ~/.ssh/config (mode 600; no sudo)"
     out_plain "  sync-from-remote [SPEC]  Copy a remote host's /var/sshd-cli/config into this login ~/.ssh/config (scp; remembers last user@host)"
@@ -7583,7 +7873,7 @@ app_help() {
     out_plain "  generate-sudoer-request [path]  Independently write a JSON grant (backup-config verb)"
     out_plain "  submit-sudoer-request [file]  Queue a JSON sudoers-grant request via sudoer-cli"
     out_plain "  remove-project-sudoers [path]  Delete project-sudoers-file draft only"
-    out_plain "  menu                 Numbered tree: 1 client-side, 2 server-side, 8 self-management, 9 Exit. Client 11… dns/ssh/download; server 21… status/start/stop/restart; self-management 81… install/version/about. Submenus 0 Back. Alias: main"
+    out_plain "  menu                 Numbered tree: 1 client-side, 2 server-side, 8 self-management, 9 Exit. Client 11… dns/ssh/download/upload; server 21… status/start/stop/restart; self-management 81… install/version/about. Submenus 0 Back. Alias: main"
     out_empty_line
     out_info "Termux (Android wake lock):"
     out_plain "  wake-lock            Acquire the Android wake lock so sshd can keep listening with the screen off (idempotent; acquire again if Android dropped it)"
@@ -7763,9 +8053,9 @@ app_main() {
                 COMMAND="$1"
                 ;;
             # --- DOMAIN_DISPATCH_COMMANDS (specializee injection) ---
-            status|start|stop|restart|port|config|host-keys|auth-keys|dns|ssh|download|menu|main|wake-lock|wake-unlock|backup-config|sync-config|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
+            status|start|stop|restart|port|config|host-keys|auth-keys|dns|ssh|download|upload|menu|main|wake-lock|wake-unlock|backup-config|sync-config|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
                 case "${COMMAND}" in
-                    port|host-keys|auth-keys|dns|ssh|download|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
+                    port|host-keys|auth-keys|dns|ssh|download|upload|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
                         if [ "${COMMAND}" = "dns" ] && [ -z "$1" ]; then
                             _op='""'
                         else
@@ -7793,7 +8083,7 @@ app_main() {
                             RC_TEST_OPERANDS="$1"
                         fi
                         ;;
-                    port|host-keys|auth-keys|dns|ssh|download|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
+                    port|host-keys|auth-keys|dns|ssh|download|upload|sync-from-remote|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
                         if [ "${COMMAND}" = "dns" ] && [ -z "$1" ]; then
                             _op='""'
                         else
@@ -7872,6 +8162,10 @@ app_main() {
         download)
             set -- ${DOMAIN_OPERANDS}
             sshd_cmd_download "$@"
+            ;;
+        upload)
+            set -- ${DOMAIN_OPERANDS}
+            sshd_cmd_upload "$@"
             ;;
         menu|main) sshd_cmd_menu ;;
         wake-lock) sshd_cmd_wake_lock ;;

@@ -1,5 +1,5 @@
 **file**: docs/requirements/requirement-shell-cli-interface.md  
-**Status**: Active (Version 1.14.1)  
+**Status**: Active (Version 1.14.2)  
 **Philosophy**: CIAO / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered)
 
 ## 1. Purpose
@@ -134,7 +134,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | **Primary executable** | Repo root `./sshd-cli` (POSIX `/bin/sh`, single-file for `curl \| sh`) |
 | **Dispatcher** | `app_main` (always invoked at end of script: `app_main "$@"` — no `${0##*/}` / APP_NAME basename gate; required for `curl \| sh`) |
 | **Output SSOT** | `out_text` + wrappers (`out_info`, `out_success`, `out_warn`, `out_error`, `out_die`, `out_plain`, `out_json`, …) |
-| **Version SSOT** | `VERSION` default `1.19.2` (script header / config block: `VERSION="1.19.2"`) |
+| **Version SSOT** | `VERSION` default `1.21.0` (script header / config block: `VERSION="1.21.0"`) |
 | **Install paths** | Global: `GLOBAL_BIN` default `/usr/local/bin`, or `${PREFIX}/bin` when Termux `PREFIX/bin` exists; User: `USER_BIN` default `${HOME}/.local/bin` |
 | **Interactive rc write path** | `BASHRC` default `${HOME}/.bashrc`. `install` PATH ensure creates/modifies this file. Tests/CI **MAY** set `BASHRC` to a file in a temp folder. Dual mention: `requirement-shell-path-and-shell-support`. |
 | **Remote channel env (help surface)** | `REPO_USER` / `REPO_NAME` (defaults `cloudgen` / `sshd-cli`); `SCRIPT_URL` composed default `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` (literal product default: `https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli`; override via env). **`help` / `about` MUST list these operator channel vars as designed — MUST NOT list `CHECKSUM`** (install-path runtime pin only; see `requirement-shell-automatic-checksum.md`). **`help` Environment also lists `BASHRC`.** |
@@ -148,7 +148,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 |---------|------|-------------------|-------------------|
 | *(no args — empty argv)* | Type 0 | `app_main` → `sshd_cmd_menu` (TTY) or `inst_perform_install` / `inst_maybe_install` (non-TTY) | Interactive: domain menu. Non-interactive: **Type O install-ensure**. Never help. See `requirement-shell-cli-zero-arguments.md` |
 | `install` | Type 0 | `inst_perform_install` | Place binary; **always** `inst_ensure_companion` (rc + Termux pkg); then **start sshd** (`sshd_start_after_install`). Idempotent unless force reinstall of the binary. Dual mention: `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` · `requirement-domain-sshd` |
-| `version` | Type 0 | `app_main` / `app_version` | Print local version; JSON object when `--json` |
+| `version` | Type 0 | argv: `app_version`; TTY **82** / typed `version` on a board: `app_about` | Argv: print local version; JSON `"type":"version"` when `--json`. TTY numbered **82** and typed `version` run **about** (diagnostics), not a header reprint (**INC-20260914-001**). |
 | `about` | Type 0 | `app_about` | Diagnostics: install presence, global/local paths, user, shell, TTY; JSON when `--json`; **no `CHECKSUM` field** |
 | `version-check` | Type 0 | `ver_check` | Compare local vs remote `VERSION` from `SCRIPT_URL`; fail clearly if URL unset/unreachable |
 | `self-update` | Type 0 | `inst_self_update` | Fetch remote version; reinstall when policy allows; reuse install primitives. **CLI-only:** no auto-start sshd; no `sshd -t` of `/etc/ssh/sshd_config`. Dual mention: `requirement-shell-self-management` · `requirement-domain-sshd` |
@@ -308,7 +308,8 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 12. Add routed verbs `systemctl` / `enable-service` / `termux-services` / `sv-enable` / `add-crontab`, or invoke `systemctl` on Termux / Git Bash / Windows cmd. POSIX Linux unit start/stop/restart stays on existing verbs (`requirement-domain-sshd` §2.2.1).  
 13. Drop `wake-lock` / `wake-unlock` from the command table without updating `requirement-shell-termux-ish`, or auto-unlock on `stop`.  
 14. Drop `rc-test` from the dual-mention table without updating `requirement-shell-path-and-shell-support`, mix it into operational help grouping, or treat it as install.  
-15. Fail **`self-update`** after a successful CLI place because host `sshd -t` / `/etc/ssh/sshd_config` / `/run/sshd` failed.
+15. Fail **`self-update`** after a successful CLI place because host `sshd -t` / `/etc/ssh/sshd_config` / `/run/sshd` failed.  
+16. Treat TTY **82** / typed `version` on a numbered board as argv `app_version` (header reprint). TTY **MUST** run `about`. Argv `version` / JSON `"type":"version"` stay thin (**INC-20260914-001**).
 
 **Violating this rule is a critical CLI interface regression.**
 

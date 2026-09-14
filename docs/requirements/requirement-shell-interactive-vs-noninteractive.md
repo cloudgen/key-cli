@@ -339,7 +339,7 @@ Mode-related work for sshd-cli is **not done** if any of the following fail:
 | **TP-DNS-13**, **TP-DNS-20**, **TP-DNS-21**, **TP-DNS-44**, **TP-DNS-47** .. **TP-DNS-49** | `tests/test_dns.sh` | have |
 | **TP-SSHD-05**, **TP-SSHD-16** | `tests/test_cli.sh` | have |
 | **TP-CFG-17** | `tests/test_config_backup.sh` | have |
-| **TP-UL-01** .. **TP-UL-18** | `tests/test_ssh_download.sh` | **todo** |
+| **TP-UL-01** .. **TP-UL-18** | `tests/test_ssh_download.sh` | **have** |
 
 **Map:** `reviews/test-plan.md`
 

@@ -1,5 +1,5 @@
 **file**: docs/requirements/requirement-shell-cli-default-interaction.md
-**Status**: Active (Version 1.0.0)
+**Status**: Active (Version 1.0.1)
 **Philosophy**: CIAO **v2.10.2** / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered / Over-protect)
 
 ## 1. Purpose
@@ -73,7 +73,7 @@ Every command row **MUST** print **number**, **bold** short description, *italic
 | **11** dns | Host list | Always |
 | **12** ssh | OpenSSH client | Always |
 | **13** download | remote tar.gz | Always |
-| **14** upload | local tar.gz | Reserved/hidden until the handler ships |
+| **14** upload | local tar.gz | Always |
 | **15** backup-config | | POSIX Linux only |
 | **16** sync-config | | POSIX Linux only |
 | **17** sudoers | | POSIX Linux only |
@@ -96,15 +96,15 @@ When **22–24** are hidden: INFO `start/stop/restart sshd features are not avai
 
 ### 2.6 Self-management submenu (parent **8**)
 
-| Number | Short |
-|--------|-------|
-| **81** install |
-| **82** version |
-| **83** about |
-| **84** version-check |
-| **85** self-update |
-| **86** self-uninstall |
-| **0** Back |
+| Number | Short | TTY |
+|--------|-------|-----|
+| **81** | install | Place / ensure |
+| **82** | version | Runs **about** (diagnostics). Argv `version` stays a one-liner. **INC-20260914-001**. |
+| **83** | about | Same diagnostics as **82** on TTY |
+| **84** | version-check | Local vs remote |
+| **85** | self-update | Channel replace |
+| **86** | self-uninstall | Remove |
+| **0** | Back | Return to front |
 
 ### 2.7 Nested action boards
 
@@ -122,7 +122,7 @@ Typed verb names still dispatch. Invalid choice: warn, reprint **this** layer, r
 | Handler | `sshd_cmd_menu` · `sshd_cmd_menu_client` · `sshd_cmd_menu_server` · `sshd_cmd_menu_self` |
 | Printer | `out_menu_choice` |
 | Ship unit | `./sshd-cli` |
-| Proof | `tests/test_cli.sh` **TP-CLI-14** · **TP-SSHD-03..05** · **TP-SSHD-16**; `tests/test_dns.sh` **TP-DNS-13** · **TP-DNS-20** · **TP-DNS-21** · **TP-DNS-47**; `tests/test_config_backup.sh` **TP-CFG-17** |
+| Proof | `tests/test_cli.sh` **TP-CLI-14** · **TP-CLI-21** · **TP-SSHD-03..05** · **TP-SSHD-16**; `tests/test_dns.sh` **TP-DNS-13** · **TP-DNS-20** · **TP-DNS-21** · **TP-DNS-47**; `tests/test_config_backup.sh` **TP-CFG-17**; `tests/test_ssh_download.sh` **TP-UL-18** |
 | Map | `reviews/test-plan.md` |
 
 ### 2.x Why This Requirement Exists (Direct CIAO Alignment)
@@ -148,6 +148,7 @@ When Termux, Git Bash, or Windows cmd is detected: Type 1/2 unused; no in-tool s
 
 - Restart a submenu at **1** or reuse **1 / 2 / 8** on a child list.  
 - Put install / version / about on the **front** board.  
+- Treat TTY **82 version** as done when it only reprints the board header; TTY **82** and typed `version` on a numbered board **MUST** run `about`. Argv `version` stays thin.  
 - Own this tree only inside `requirement-domain-sshd.md`.  
 - `out_die` on an unknown TTY menu number.  
 - `$()` a `read` helper for the choice.  

@@ -3,7 +3,7 @@
 # =============================================================================
 # Primary REQs: requirement-domain-sshd, requirement-shell-cli-interface,
 # requirement-shell-interactive-vs-noninteractive
-# TP families: TP-SSH-*, TP-DL-*
+# TP families: TP-SSH-*, TP-DL-*, TP-UL-*
 # Host names are minted per run (synthetic-test-fixture).
 # Fake OpenSSH client via SSHD_CLI_SSH (no real SSH session).
 # =============================================================================
@@ -49,6 +49,12 @@ log="${SSHD_CLI_SSH_LOG:-}"
 if [ -n "${log}" ]; then
     printf '%s\n' "$*" >> "${log}"
 fi
+_in="${SSHD_CLI_SSH_STDIN:-}"
+if [ -n "${_in}" ]; then
+    cat > "${_in}"
+else
+    cat >/dev/null
+fi
 fix="${SSHD_CLI_TAR_FIXTURE:-}"
 base="${SSHD_CLI_TAR_BASE:-}"
 if [ -n "${fix}" ] && [ -d "${fix}" ]; then
@@ -68,7 +74,7 @@ FAKESSH
 }
 
 run_test_ssh_download() {
-    t_header "ssh Host pick + download folder (TP-SSH / TP-DL)"
+    t_header "ssh Host pick + download/upload folder (TP-SSH / TP-DL / TP-UL)"
 
     require_cmd sh
     require_cmd tar
@@ -402,6 +408,208 @@ EOF
     assert_eq "TP-DL-17 redisplays folder list" "2" "$_n"
     assert_file_exists "TP-DL-17 extracted after retry" "${_wd10}/app/ok.txt"
 
-    rm -rf "${_wd}" "${_wd2}" "${_wd3}" "${_wd4}" "${_wd5}" "${_wd6}" "${_wd7}" "${_wd8}" "${_wd9}" "${_wd10}" "${_fix}"
+    # --- TP-UL local folder upload (inverse of download) ---
+    _ul="${CI_HOME}/box/app"
+    mkdir -p "${_ul}"
+    printf 'up\n' > "${_ul}/ok.txt"
+    _ul_stdin="${CI_HOME}/upload.stdin"
+    _ul_mem="${CI_HOME}/.local/sshd-cli/upload-folders"
+
+    # TP-UL-01 help lists upload
+    _out=$(HOME="${CI_HOME}" sh "${SCRIPT}" help 2>&1)
+    assert_contains "TP-UL-01 help lists upload" "$_out" "upload [N|name]"
+    assert_contains "TP-UL-01 help local folders" "$_out" "previous local folders"
+    assert_contains "TP-UL-01 help tilde this login" "$_out" "~/folder is this login"
+
+    # TP-UL-02 non-interactive upload streams tar; remote extracts under "$HOME"
+    : > "${_ssh_log}"
+    rm -f "${_ul_stdin}"
+    _out=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+        SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+        sh "${SCRIPT}" upload "${H_DL}" "${_ul}" 2>&1)
+    _ec=$?
+    assert_eq "TP-UL-02 upload exit 0" 0 "$_ec"
+    _log=$(cat "${_ssh_log}")
+    assert_contains "TP-UL-02 remote tar xzf" "$_log" "tar xzf - -C"
+    assert_contains "TP-UL-02 remote uses HOME" "$_log" '"$HOME"'
+    assert_not_contains "TP-UL-02 remote not this-login HOME" "$_log" "${CI_HOME}"
+    assert_file_exists "TP-UL-02 stdin archive" "${_ul_stdin}"
+    if tar tzf "${_ul_stdin}" 2>/dev/null | grep -q 'ok.txt'; then
+        t_pass "TP-UL-02 stdin is tar with ok.txt"
+    else
+        t_fail "TP-UL-02 stdin is tar with ok.txt"
+    fi
+
+    # TP-UL-03 remembers local folder for that Host
+    assert_file_exists "TP-UL-03 memory file" "${_ul_mem}"
+    _mc=$(cat "${_ul_mem}")
+    assert_contains "TP-UL-03 memory dns" "$_mc" "${H_DL}"
+    assert_contains "TP-UL-03 memory path" "$_mc" "${_ul}"
+
+    # TP-UL-04 TTY numbered previous local folder
+    : > "${_ssh_log}"
+    _out=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+            SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+            sh "${SCRIPT}" upload "${H_DL}" <<'EOF'
+
+1
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-04 tty previous exit 0" 0 "$_ec"
+    assert_contains "TP-UL-04 lists previous path" "$_out" "${_ul}"
+
+    # TP-UL-05 TTY type a new local path
+    _ul2="${CI_HOME}/box/other"
+    mkdir -p "${_ul2}"
+    printf 'up2\n' > "${_ul2}/ok.txt"
+    : > "${_ssh_log}"
+    _out=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+            SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+            sh "${SCRIPT}" upload "${H_DL}" <<EOF
+
+${_ul2}
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-05 tty new path exit 0" 0 "$_ec"
+    _mc=$(cat "${_ul_mem}")
+    assert_contains "TP-UL-05 memory new path" "$_mc" "${_ul2}"
+
+    # TP-UL-06 missing folder operand fail-closed
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload "${H_DL}" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-06 missing folder exit 1" 1 "$_ec"
+    assert_contains "TP-UL-06 Next upload" "$_err" "upload"
+
+    # TP-UL-07 refuse shell metacharacters
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload "${H_DL}" '/opt/app;rm' 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-07 bad folder exit 1" 1 "$_ec"
+    assert_contains "TP-UL-07 not allowed" "$_err" "not allowed"
+
+    # TP-UL-08 JSON upload one object
+    : > "${_ssh_log}"
+    _out=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+        SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+        sh "${SCRIPT}" --json upload "${H_DL}" "${_ul}" 2>/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-08 json upload exit 0" 0 "$_ec"
+    assert_contains "TP-UL-08 json type" "$_out" '"type":"upload"'
+    assert_contains "TP-UL-08 json dns" "$_out" "\"dns\":\"${H_DL}\""
+    assert_contains "TP-UL-08 json folder" "$_out" "\"folder\":\"${_ul}\""
+    assert_contains "TP-UL-08 json user key" "$_out" '"user":'
+    assert_contains "TP-UL-08 json destination HOME" "$_out" '$HOME/'
+
+    # TP-UL-09 Host * is not an upload row
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload '*' "${_ul}" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-09 wildcard upload exit 1" 1 "$_ec"
+
+    # TP-UL-10 TTY upload default user uses Host User (-l u1)
+    : > "${_ssh_log}"
+    _out=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+            SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+            sh "${SCRIPT}" upload "${H_SSH}" "${_ul}" <<'EOF'
+
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-10 tty default user exit 0" 0 "$_ec"
+    _log=$(cat "${_ssh_log}")
+    assert_contains "TP-UL-10 log -l u1" "$_log" "-l u1"
+    assert_contains "TP-UL-10 log alias" "$_log" "${H_SSH}"
+    assert_contains "TP-UL-10 prompt user" "$_out" "user ["
+
+    # TP-UL-11 TTY upload user override
+    : > "${_ssh_log}"
+    _out=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+            SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+            sh "${SCRIPT}" upload "${H_SSH}" "${_ul}" <<'EOF'
+otheruser
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-11 tty user override exit 0" 0 "$_ec"
+    _log=$(cat "${_ssh_log}")
+    assert_contains "TP-UL-11 log -l otheruser" "$_log" "-l otheruser"
+    assert_contains "TP-UL-11 log alias" "$_log" "${H_SSH}"
+
+    # TP-UL-12 TTY invalid user fail-closed; Next names upload
+    _err=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" \
+            sh "${SCRIPT}" upload "${H_SSH}" "${_ul}" 2>&1 >/dev/null <<'EOF'
+bad!user
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-12 bad user exit 1" 1 "$_ec"
+    assert_contains "TP-UL-12 not allowed" "$_err" "not allowed"
+    assert_contains "TP-UL-12 Next upload" "$_err" "upload"
+
+    # TP-UL-13 TTY "" omits -l
+    : > "${_ssh_log}"
+    _out=$(
+        HOME="${CI_HOME}" INTERACTIVE=1 SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+            SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+            sh "${SCRIPT}" upload "${H_SSH}" "${_ul}" <<'EOF'
+""
+EOF
+    )
+    _ec=$?
+    assert_eq "TP-UL-13 empty user token exit 0" 0 "$_ec"
+    _log=$(cat "${_ssh_log}")
+    assert_not_contains "TP-UL-13 log has no -l" "$_log" "-l "
+    assert_contains "TP-UL-13 log alias" "$_log" "${H_SSH}"
+
+    # TP-UL-14 local ~/folder; this-login HOME for tar; remote dest "$HOME"
+    mkdir -p "${CI_HOME}/box/app"
+    printf 'up\n' > "${CI_HOME}/box/app/ok.txt"
+    : > "${_ssh_log}"
+    rm -f "${_ul_stdin}"
+    _out=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" SSHD_CLI_SSH_LOG="${_ssh_log}" \
+        SSHD_CLI_SSH_STDIN="${_ul_stdin}" \
+        sh "${SCRIPT}" upload "${H_DL}" '~/box/app' 2>&1)
+    _ec=$?
+    assert_eq "TP-UL-14 tilde folder exit 0" 0 "$_ec"
+    _log=$(cat "${_ssh_log}")
+    assert_contains "TP-UL-14 remote uses HOME" "$_log" '"$HOME"'
+    assert_not_contains "TP-UL-14 remote not this-login HOME" "$_log" "${CI_HOME}"
+    assert_file_exists "TP-UL-14 stdin archive" "${_ul_stdin}"
+    _mc=$(cat "${_ul_mem}")
+    assert_contains "TP-UL-14 memory tilde path" "$_mc" "~/box/app"
+
+    # TP-UL-15 ~ alone fail-closed
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload "${H_DL}" '~' 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-15 tilde-only exit 1" 1 "$_ec"
+    assert_contains "TP-UL-15 not allowed" "$_err" "not allowed"
+    assert_contains "TP-UL-15 Next upload" "$_err" "upload"
+
+    # TP-UL-16 ~user/path fail-closed
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload "${H_DL}" '~other/box' 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-16 tilde-user exit 1" 1 "$_ec"
+    assert_contains "TP-UL-16 not allowed" "$_err" "not allowed"
+    assert_contains "TP-UL-16 Next upload" "$_err" "upload"
+
+    # TP-UL-17 missing local directory fail-closed
+    _err=$(HOME="${CI_HOME}" SSHD_CLI_SSH="${_fake_ssh}" sh "${SCRIPT}" upload "${H_DL}" "${CI_HOME}/no-such-upload-dir" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-UL-17 missing dir exit 1" 1 "$_ec"
+    assert_contains "TP-UL-17 not a directory" "$_err" "not a directory"
+    assert_contains "TP-UL-17 Next upload" "$_err" "upload"
+
+    # TP-UL-18 TTY client menu numbers upload 14
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 \
+        sh "${SCRIPT}" 2>&1)
+    assert_contains "TP-UL-18 Termux menu upload row 14" "$_out" "14."
+    assert_contains "TP-UL-18 Termux menu upload short" "$_out" "upload"
+
+    rm -rf "${_wd}" "${_wd2}" "${_wd3}" "${_wd4}" "${_wd5}" "${_wd6}" "${_wd7}" "${_wd8}" "${_wd9}" "${_wd10}" "${_fix}" "${_ul}" "${_ul2}"
     ci_cleanup_env
 }

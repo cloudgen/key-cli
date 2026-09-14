@@ -8,8 +8,8 @@
 |----------|-------|------|--------|------|---------|
 | requirement-class-software-dev | Software-development class law + residual stack (posix-sh, no package tool) | class | Active | `requirement-class-software-dev.md` | 2026-09-09 |
 | requirement-shell-automatic-checksum | Automatic companion-digest integrity (transparent link/value/result; CHECKSUM not help/about) | shell | Active | `requirement-shell-automatic-checksum.md` | 2026-09-06 |
-| requirement-shell-cli-default-interaction | TTY numbered main menu (front 1/2/8, parent-prefix children, 0 Back, bold short / italic long) | shell | Active | `requirement-shell-cli-default-interaction.md` | 2026-09-14 |
-| requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes; `wake-lock`; `BASHRC`; `rc-test` dual mention; `dns unset`; `ssh`; `download` / `upload` TTY user default; `download` `~/folder`; menu dual mention; TTY unknown choice redisplay) | shell | Active | `requirement-shell-cli-interface.md` | 2026-09-14 |
+| requirement-shell-cli-default-interaction | TTY numbered main menu (front 1/2/8, parent-prefix children, 0 Back, bold short / italic long; **82** runs about) | shell | Active | `requirement-shell-cli-default-interaction.md` | 2026-09-14 |
+| requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes; `wake-lock`; `BASHRC`; `rc-test` dual mention; `dns unset`; `ssh`; `download` / `upload` TTY user default; `download` `~/folder`; menu dual mention; TTY unknown choice redisplay; TTY **82** about) | shell | Active | `requirement-shell-cli-interface.md` | 2026-09-14 |
 | requirement-shell-cli-storage | Scratch/cache storage resolve (per-user isolation, mkdir fail-soft, Git Bash AppData Temp) | shell | Active | `requirement-shell-cli-storage.md` | 2026-09-11 |
 | requirement-shell-cli-zero-arguments | Empty argv: TTY menu / non-TTY Type O install-ensure | shell | Active | `requirement-shell-cli-zero-arguments.md` | 2026-09-09 |
 | requirement-shell-idempotency | Shell idempotency / re-run safety for ensure-style ops | shell | Active | `requirement-shell-idempotency.md` | 2026-09-09 |
@@ -26,7 +26,7 @@
 | requirement-sshd-config-backup | Points at `requirement-shell-config-backup` (product store names) | backup | Active | `requirement-sshd-config-backup.md` | 2026-09-12 |
 | requirement-sudoer-json-file | Points at `requirement-shell-sudoer` (JSON slice) | privilege | Active | `requirement-sudoer-json-file.md` | 2026-09-12 |
 | requirement-three-layer-privilege-model | Type 0/1/2 map; sudoer verbs point at `requirement-shell-sudoer` | privilege | Active | `requirement-three-layer-privilege-model.md` | 2026-09-12 |
-| requirement-domain-sshd | OpenSSH sshd domain (status/start/stop/port/keys/menu/dns; `dns unset`; `ssh` row 6 + user default; `download` row 7 + user default + `~/folder`; `upload` row 8 + user default + local `tar.gz` into remote home; TTY unknown menu redisplay; backup-config/sync-config; sudoers; Termux daemonize; POSIX Linux systemd `systemctl` unit path; this-login ssh_config dns-ip; menu row 5; non-root hides 2/3/4; self-update CLI-only) | domain | Active | `requirement-domain-sshd.md` | 2026-09-13 |
+| requirement-domain-sshd | OpenSSH sshd domain (status/start/stop/port/keys/menu/dns; `dns unset`; `ssh` **12** + user default; `download` **13** + user default + `~/folder`; `upload` **14** + user default + local `tar.gz` into remote home; TTY unknown menu redisplay; backup-config/sync-config; sudoers; Termux daemonize; POSIX Linux systemd `systemctl` unit path; this-login ssh_config dns-ip; non-root hides 22–24; self-update CLI-only) | domain | Active | `requirement-domain-sshd.md` | 2026-09-14 |
 
 **Rules for agents:**
 
