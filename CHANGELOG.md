@@ -5,11 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.20.0] - 2026-09-14
+
+### Changed
+
+- TTY main menu is a **tree**: front **1 client-side**, **2 server-side**, **8 self-management**, **9 Exit**. Client verbs **11…**, server **21…**, self-management **81…**. Every submenu **0** Back. Command numbers stay unique (child prefix = parent). Each row is **number** + **bold** short + *italic* long. Independent law: `requirement-shell-cli-default-interaction`. Tests **TP-CLI-14** · **TP-SSHD-03..05** · **TP-SSHD-16** · **TP-DNS-13** · **TP-DNS-20** · **TP-DNS-21** · **TP-DNS-47** · **TP-CFG-04** · **TP-CFG-05** · **TP-CFG-17**.
+
 ## [1.19.2] - 2026-09-13
 
 ### Changed
 
 - TTY numbered menus **warn and show the same list again** when the choice is unknown or out of range (main menu, sudoers submenu, dns action menu, Host pick, unset extra-settings picker, download folder pick). A wrong number is no longer a crash. Exit / empty still leave that layer. Tests **TP-SSHD-05** · **TP-SSHD-16** · **TP-DNS-47** · **TP-DNS-48** · **TP-DNS-49** · **TP-CFG-17** · **TP-DL-17**.
+- POSIX Linux TTY row **10** is `sudoers: grant and drafts for passwordless sudo` (dropped trailing `backup-config` from the label).
 
 ## [1.19.1] - 2026-09-12
 

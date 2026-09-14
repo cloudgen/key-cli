@@ -12,6 +12,7 @@
 # (Type 0 lifecycle plus OpenSSH sshd domain: status/start/stop/port/keys).
 # Project requirements (docs/requirements/ only — never cite templates here):
 # - requirement-shell-cli-interface.md
+# - requirement-shell-cli-default-interaction.md (TTY numbered tree 1/2/8)
 # - requirement-shell-cli-zero-arguments.md  (empty argv: TTY menu / non-TTY install-ensure)
 # - requirement-shell-cli-storage.md         (util_resolve_storage + about fields)
 # - requirement-shell-idempotency.md
@@ -55,8 +56,8 @@ APP_NAME="sshd-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: simplify Termux to install and run OpenSSH sshd (status/start/stop/port/keys/dns) plus self-install; Linux host deposit of ~/.ssh/config (backup-config / sync-config / sync-from-remote).}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="1.19.2"
-: "${VERSION:=1.19.1}"
+VERSION="1.20.0"
+: "${VERSION:=1.20.0}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -310,6 +311,26 @@ out_die() { out_json_error "$*"; out_text out_error "$*"; exit 1; }
 
 out_plain() {
     out_text plain "$*"
+}
+
+# Last updated: 2026-09-14
+# Numbered menu row: number + bold short + italic long (TTY SGR 1 / 3;37).
+# ALIGNMENT: requirement-shell-cli-default-interaction · requirement-shell-output-requirements
+out_menu_choice() {
+    _mc_n="${1-}"
+    _mc_short="${2-}"
+    _mc_long="${3-}"
+    : "${JSON:=0}" : "${QUIET:=0}" : "${TTY:=0}"
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        unset _mc_n _mc_short _mc_long
+        return 0
+    fi
+    if [ "${TTY}" -eq 1 ]; then
+        printf '%s. \033[1m%s\033[0m: \033[3;37m%s\033[0m\n' "${_mc_n}" "${_mc_short}" "${_mc_long}"
+    else
+        printf '%s. %s: %s\n' "${_mc_n}" "${_mc_short}" "${_mc_long}"
+    fi
+    unset _mc_n _mc_short _mc_long
 }
 
 # =============================================================================
@@ -5011,22 +5032,22 @@ sshd_cmd_sudoers_menu() {
     fi
     while true; do
         out_info "$(printf '%s' "${APP_NAME}") — sudoers (grant and drafts)"
-        out_plain "1. generate-sudoer-request: Write a JSON grant you can read"
-        out_plain "2. submit-sudoer-request: Queue the JSON grant inbound"
-        out_plain "3. print-sudoers: Emit sudoers draft"
-        out_plain "4. print-sudoers-install-script: Write admin install script"
-        out_plain "5. remove-project-sudoers: Remove sudoers draft only"
-        out_plain "9. Exit"
+        out_menu_choice "171" "generate-sudoer-request" "Write a JSON grant you can read"
+        out_menu_choice "172" "submit-sudoer-request" "Queue the JSON grant inbound"
+        out_menu_choice "173" "print-sudoers" "Emit sudoers draft"
+        out_menu_choice "174" "print-sudoers-install-script" "Write admin install script"
+        out_menu_choice "175" "remove-project-sudoers" "Remove sudoers draft only"
+        out_plain "0. Back"
         out_msg_n "Choose a number, or type the command name: "
         _sc=""
         read -r _sc || true
         case "${_sc}" in
-            1|generate-sudoer-request) sshd_cmd_generate_sudoer_request; break ;;
-            2|submit-sudoer-request) sshd_cmd_submit_sudoer_request; break ;;
-            3|print-sudoers) sshd_cmd_print_sudoers; break ;;
-            4|print-sudoers-install-script) sshd_cmd_print_sudoers_install_script; break ;;
-            5|remove-project-sudoers) sshd_cmd_remove_project_sudoers; break ;;
-            9|0|q|exit|"") break ;;
+            171|generate-sudoer-request) sshd_cmd_generate_sudoer_request; break ;;
+            172|submit-sudoer-request) sshd_cmd_submit_sudoer_request; break ;;
+            173|print-sudoers) sshd_cmd_print_sudoers; break ;;
+            174|print-sudoers-install-script) sshd_cmd_print_sudoers_install_script; break ;;
+            175|remove-project-sudoers) sshd_cmd_remove_project_sudoers; break ;;
+            0|q|exit|"") break ;;
             *)
                 out_warn "Unknown sudoers choice '${_sc}'. Choose a number from the list, or type the command name."
                 continue
@@ -6495,38 +6516,38 @@ sshd_dns_interactive_pick() {
     while true; do
         out_info "SSH names (dns) in $(sshd_dns_config_path)"
         sshd_dns_list_context
-        out_plain "1. Edit: change this Host (dns, ip, user, Termux, identity, Old OpenSSH). Enter keeps the current value"
-        out_plain "2. Add: new Host in this login ~/.ssh/config"
-        out_plain "3. Delete: remove a Host"
-        out_plain "4. Unset: drop extra settings (user, port, …) — not dns or ip"
-        out_plain "9. Exit"
+        out_menu_choice "111" "Edit" "change this Host (dns, ip, user, Termux, identity, Old OpenSSH). Enter keeps the current value"
+        out_menu_choice "112" "Add" "new Host in this login ~/.ssh/config"
+        out_menu_choice "113" "Delete" "remove a Host"
+        out_menu_choice "114" "Unset" "drop extra settings (user, port, …) — not dns or ip"
+        out_plain "0. Back"
         out_msg_n "Choose a number, or type the command name: "
         _act=""
         read -r _act || true
         case "${_act}" in
-            1|edit)
+            111|edit)
                 if sshd_dns_pick_host "edit"; then
                     sshd_dns_walk_edit "${DNS_PICK_SEL}"
                 fi
                 break
                 ;;
-            2|add)
+            112|add)
                 sshd_dns_walk_add
                 break
                 ;;
-            3|delete|rm)
+            113|delete|rm)
                 if sshd_dns_pick_host "delete"; then
                     sshd_dns_apply_delete "${DNS_PICK_SEL}"
                 fi
                 break
                 ;;
-            4|unset|clear)
+            114|unset|clear)
                 if sshd_dns_pick_host "unset"; then
                     sshd_dns_walk_unset "${DNS_PICK_SEL}"
                 fi
                 break
                 ;;
-            9|0|q|exit|"")
+            0|q|exit|"")
                 unset _act
                 return 0
                 ;;
@@ -7040,126 +7061,267 @@ sshd_cmd_download() {
     return 0
 }
 
-sshd_cmd_menu() {
-    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
-        out_die "menu needs a terminal. Run a named command instead, for example: ${APP_NAME} status"
+# Last updated: 2026-09-14
+# ALIGNMENT: requirement-shell-cli-default-interaction
+# Return 0 if ${_choice} was a typed leaf (caller leaves this layer).
+sshd_menu_typed_leaf() {
+    case "${_choice}" in
+        status) sshd_cmd_status; return 0 ;;
+        start) sshd_cmd_start; return 0 ;;
+        stop) sshd_cmd_stop; return 0 ;;
+        restart) sshd_cmd_restart; return 0 ;;
+        dns) sshd_cmd_dns; return 0 ;;
+        ssh) sshd_cmd_ssh; return 0 ;;
+        download) sshd_cmd_download; return 0 ;;
+        backup-config) sshd_cmd_backup_config; return 0 ;;
+        sync-config) sshd_cmd_sync_config; return 0 ;;
+        sudoers) sshd_cmd_sudoers_menu; return 0 ;;
+        sync-from-remote) sshd_cmd_sync_from_remote; return 0 ;;
+        generate-sudoer-request) sshd_cmd_generate_sudoer_request; return 0 ;;
+        submit-sudoer-request) sshd_cmd_submit_sudoer_request; return 0 ;;
+        print-sudoers) sshd_cmd_print_sudoers; return 0 ;;
+        print-sudoers-install-script) sshd_cmd_print_sudoers_install_script; return 0 ;;
+        remove-project-sudoers) sshd_cmd_remove_project_sudoers; return 0 ;;
+        port) sshd_cmd_port; return 0 ;;
+        config) sshd_cmd_config; return 0 ;;
+        host-keys) sshd_cmd_host_keys list; return 0 ;;
+        auth-keys) sshd_cmd_auth_keys list; return 0 ;;
+        wake-lock) sshd_cmd_wake_lock; return 0 ;;
+        wake-unlock) sshd_cmd_wake_unlock; return 0 ;;
+        install) inst_perform_install; return 0 ;;
+        version) app_version; return 0 ;;
+        about) app_about; return 0 ;;
+        version-check) ver_check; return 0 ;;
+        self-update) inst_self_update; return 0 ;;
+        self-uninstall) inst_self_uninstall; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Last updated: 2026-09-14
+sshd_cmd_menu_client() {
+    _show_cfg=1
+    if sshd_is_normal_user_only_cli; then
+        _show_cfg=0
     fi
     while true; do
-        _show_daemon=0
-        if sshd_menu_show_daemon_rows; then
-            _show_daemon=1
-        fi
-        _show_cfg=1
-        if sshd_is_normal_user_only_cli; then
-            _show_cfg=0
-        fi
-        out_info "**${APP_NAME}**(*${VERSION}*)"
+        out_info "**${APP_NAME}**(*${VERSION}*) — client-side"
         if [ "${_show_cfg}" -eq 0 ]; then
             out_info "backup-config and sync-config not available for $(sshd_host_normal_user_only_label)"
         fi
-        if [ "${_show_daemon}" -eq 0 ]; then
-            out_info "start/stop/restart sshd features are not available for non-root in $(sshd_os_name)"
-        fi
-        out_plain "1. Show sshd status: running, port, and paths"
-        if [ "${_show_daemon}" -eq 1 ]; then
-            out_plain "2. Start sshd: launch the OpenSSH daemon (background, not a boot service)"
-            out_plain "3. Stop sshd: end the running daemon"
-            out_plain "4. Restart sshd: stop then start"
-        fi
-        out_plain "5. SSH names (dns): this login ~/.ssh/config Host list"
-        out_plain "6. ssh: OpenSSH client to a Host from this login ~/.ssh/config"
-        out_plain "7. download: tar.gz a remote folder into this directory"
+        out_menu_choice "11" "dns" "this login ~/.ssh/config Host list"
+        out_menu_choice "12" "ssh" "OpenSSH client to a Host from this login ~/.ssh/config"
+        out_menu_choice "13" "download" "tar.gz a remote folder into this directory"
         if [ "${_show_cfg}" -eq 1 ]; then
-            out_plain "8. backup-config: copy this login ~/.ssh/config to /var/sshd-cli"
-            out_plain "9. sync-config: copy /var/sshd-cli/config into this login ~/.ssh/config"
-            out_plain "10. sudoers: grant and drafts for passwordless sudo backup-config"
+            out_menu_choice "15" "backup-config" "copy this login ~/.ssh/config to /var/sshd-cli"
+            out_menu_choice "16" "sync-config" "copy /var/sshd-cli/config into this login ~/.ssh/config"
+            out_menu_choice "17" "sudoers" "grant and drafts for passwordless sudo"
             out_plain "   (or type sync-from-remote [user@host]: copy /var/sshd-cli/config from another host)"
-            out_plain "99. Exit"
         else
-            out_plain "8. sync-from-remote: copy /var/sshd-cli/config from user@host (or host)"
-            out_plain "9. Exit"
+            out_menu_choice "18" "sync-from-remote" "copy /var/sshd-cli/config from user@host (or host)"
         fi
+        out_plain "0. Back"
         out_msg_n "Choose a number, or type the command name: "
         _choice=""
-        read -r _choice || true
+        if ! read -r _choice; then
+            unset _choice _show_cfg
+            return 0
+        fi
         case "${_choice}" in
-            1|status) sshd_cmd_status; break ;;
-            2)
-                if [ "${_show_daemon}" -eq 1 ]; then
-                    sshd_cmd_start
-                    break
-                fi
+            11|dns) sshd_cmd_dns; continue ;;
+            12|ssh) sshd_cmd_ssh; continue ;;
+            13|download) sshd_cmd_download; continue ;;
+            14)
                 out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
                 continue
                 ;;
-            start) sshd_cmd_start; break ;;
-            3)
-                if [ "${_show_daemon}" -eq 1 ]; then
-                    sshd_cmd_stop
-                    break
-                fi
-                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
-                continue
-                ;;
-            stop) sshd_cmd_stop; break ;;
-            4)
-                if [ "${_show_daemon}" -eq 1 ]; then
-                    sshd_cmd_restart
-                    break
-                fi
-                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
-                continue
-                ;;
-            restart) sshd_cmd_restart; break ;;
-            5|dns) sshd_cmd_dns; break ;;
-            6|ssh) sshd_cmd_ssh; break ;;
-            7|download) sshd_cmd_download; break ;;
-            8)
+            15)
                 if [ "${_show_cfg}" -eq 1 ]; then
                     sshd_cmd_backup_config
-                else
-                    sshd_cmd_sync_from_remote
-                fi
-                break
-                ;;
-            backup-config) sshd_cmd_backup_config; break ;;
-            9)
-                if [ "${_show_cfg}" -eq 1 ]; then
-                    sshd_cmd_sync_config
-                    break
-                fi
-                break
-                ;;
-            sync-config) sshd_cmd_sync_config; break ;;
-            10)
-                if [ "${_show_cfg}" -eq 1 ]; then
-                    sshd_cmd_sudoers_menu
-                    break
+                    continue
                 fi
                 out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
                 continue
                 ;;
-            sudoers) sshd_cmd_sudoers_menu; break ;;
-            sync-from-remote) sshd_cmd_sync_from_remote; break ;;
-            generate-sudoer-request) sshd_cmd_generate_sudoer_request; break ;;
-            submit-sudoer-request) sshd_cmd_submit_sudoer_request; break ;;
-            print-sudoers) sshd_cmd_print_sudoers; break ;;
-            print-sudoers-install-script) sshd_cmd_print_sudoers_install_script; break ;;
-            remove-project-sudoers) sshd_cmd_remove_project_sudoers; break ;;
-            port) sshd_cmd_port; break ;;
-            config) sshd_cmd_config; break ;;
-            host-keys) sshd_cmd_host_keys list; break ;;
-            auth-keys) sshd_cmd_auth_keys list; break ;;
-            wake-lock) sshd_cmd_wake_lock; break ;;
-            wake-unlock) sshd_cmd_wake_unlock; break ;;
-            99|999|exit|"") break ;;
+            16)
+                if [ "${_show_cfg}" -eq 1 ]; then
+                    sshd_cmd_sync_config
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            17)
+                if [ "${_show_cfg}" -eq 1 ]; then
+                    sshd_cmd_sudoers_menu
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            18)
+                if [ "${_show_cfg}" -eq 0 ]; then
+                    sshd_cmd_sync_from_remote
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            0|q|"")
+                unset _choice _show_cfg
+                return 0
+                ;;
             *)
+                if sshd_menu_typed_leaf; then
+                    continue
+                fi
                 out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
                 continue
                 ;;
         esac
     done
-    unset _choice _show_daemon _show_cfg
+}
+
+# Last updated: 2026-09-14
+sshd_cmd_menu_server() {
+    _show_daemon=0
+    if sshd_menu_show_daemon_rows; then
+        _show_daemon=1
+    fi
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*) — server-side"
+        if [ "${_show_daemon}" -eq 0 ]; then
+            out_info "start/stop/restart sshd features are not available for non-root in $(sshd_os_name)"
+        fi
+        out_menu_choice "21" "status" "running, port, and paths"
+        if [ "${_show_daemon}" -eq 1 ]; then
+            out_menu_choice "22" "start" "launch the OpenSSH daemon (background, not a boot service)"
+            out_menu_choice "23" "stop" "end the running daemon"
+            out_menu_choice "24" "restart" "stop then start"
+        fi
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice _show_daemon
+            return 0
+        fi
+        case "${_choice}" in
+            21|status) sshd_cmd_status; continue ;;
+            22)
+                if [ "${_show_daemon}" -eq 1 ]; then
+                    sshd_cmd_start
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            23)
+                if [ "${_show_daemon}" -eq 1 ]; then
+                    sshd_cmd_stop
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            24)
+                if [ "${_show_daemon}" -eq 1 ]; then
+                    sshd_cmd_restart
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            0|q|"")
+                unset _choice _show_daemon
+                return 0
+                ;;
+            *)
+                if sshd_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+# Last updated: 2026-09-14
+sshd_cmd_menu_self() {
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*) — self-management"
+        out_menu_choice "81" "install" "place ${APP_NAME}; ensure rc + Termux openssh/termux-auth; start sshd"
+        out_menu_choice "82" "version" "show current version"
+        out_menu_choice "83" "about" "show detailed diagnostics"
+        out_menu_choice "84" "version-check" "compare local vs remote version"
+        out_menu_choice "85" "self-update" "update ${APP_NAME} to a newer remote version"
+        out_menu_choice "86" "self-uninstall" "remove ${APP_NAME} (safe PATH cleanup)"
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice
+            return 0
+        fi
+        case "${_choice}" in
+            81|install) inst_perform_install; continue ;;
+            82|version) app_version; continue ;;
+            83|about) app_about; continue ;;
+            84|version-check) ver_check; continue ;;
+            85|self-update) inst_self_update; continue ;;
+            86|self-uninstall) inst_self_uninstall; continue ;;
+            0|q|"")
+                unset _choice
+                return 0
+                ;;
+            *)
+                if sshd_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+# Last updated: 2026-09-14
+# ALIGNMENT: requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments
+sshd_cmd_menu() {
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
+        out_die "menu needs a terminal. Run a named command instead, for example: ${APP_NAME} status"
+    fi
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*)"
+        out_menu_choice "1" "client-side" "this login OpenSSH client (~/.ssh/config, ssh, folders)"
+        out_menu_choice "2" "server-side" "this host OpenSSH sshd (listen, keys, port)"
+        out_menu_choice "8" "self-management" "this CLI install, version, update, uninstall"
+        out_plain "9. Exit"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice
+            return 0
+        fi
+        case "${_choice}" in
+            1|client-side) sshd_cmd_menu_client; continue ;;
+            2|server-side) sshd_cmd_menu_server; continue ;;
+            8|self-management) sshd_cmd_menu_self; continue ;;
+            9|99|999|exit|"")
+                unset _choice
+                return 0
+                ;;
+            *)
+                if sshd_menu_typed_leaf; then
+                    unset _choice
+                    return 0
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
 }
 
 
@@ -7421,7 +7583,7 @@ app_help() {
     out_plain "  generate-sudoer-request [path]  Independently write a JSON grant (backup-config verb)"
     out_plain "  submit-sudoer-request [file]  Queue a JSON sudoers-grant request via sudoer-cli"
     out_plain "  remove-project-sudoers [path]  Delete project-sudoers-file draft only"
-    out_plain "  menu                 Numbered list: status, start, stop, restart, dns, ssh, download, then backup-config/sync-config/sudoers (POSIX Linux, Exit 99) or sync-from-remote (Termux / Git Bash / Windows cmd, Exit 9). Alias: main. POSIX Linux non-root omits 2/3/4"
+    out_plain "  menu                 Numbered tree: 1 client-side, 2 server-side, 8 self-management, 9 Exit. Client 11… dns/ssh/download; server 21… status/start/stop/restart; self-management 81… install/version/about. Submenus 0 Back. Alias: main"
     out_empty_line
     out_info "Termux (Android wake lock):"
     out_plain "  wake-lock            Acquire the Android wake lock so sshd can keep listening with the screen off (idempotent; acquire again if Android dropped it)"

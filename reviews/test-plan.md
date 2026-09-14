@@ -79,7 +79,7 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-CFG-16 | `--json` type/host fields | test_config_backup | requirement-shell-config-backup | **have** |
 | TP-CFG-17 | TTY sudoers submenu unknown choice warns and redisplays | test_config_backup | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
 | TP-CLI-13 | backup/restore/sudoers verbs unknown | test_cli | requirement-shell-cli-interface | **have** |
-| TP-CLI-14 | empty argv interactive → domain menu (no install); status + dns row 5 + Exit 9 | test_cli | requirement-shell-cli-zero-arguments · requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-CLI-14 | empty argv interactive → front 1/2/8/9 (no install); client 11 dns / 12 ssh / 13 download | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments · requirement-domain-sshd | **have** |
 | TP-CLI-15 | status Connect: live ssh -p user@ipv4; no `<this-host>` | test_cli | requirement-domain-sshd | **have** |
 
 ### TP-SSHD (domain start: Termux daemonize / Linux systemd unit)
@@ -88,9 +88,9 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 |-------|--------|-------|------------------------|--------|
 | TP-SSHD-01 | Start launch is `sshd -f`; help/dispatcher have no systemd / termux-services / sv-enable / add-crontab / enable-service | `tests/test_cli.sh` | requirement-domain-sshd · requirement-shell-cli-interface | **have** |
 | TP-SSHD-02 | Termux stub install/start names background daemon, reboot re-start, Termux:Boot operator hook | `tests/test_local_lifecycle.sh` | requirement-domain-sshd | **have** |
-| TP-SSHD-03 | POSIX Linux non-root TTY menu hides rows 2/3/4; INFO names OS; dns stays 5 | `tests/test_cli.sh` | requirement-domain-sshd | **have** |
-| TP-SSHD-04 | Termux mock TTY menu still shows rows 2/3/4; no non-root INFO | `tests/test_cli.sh` | requirement-domain-sshd · requirement-shell-termux-ish | **have** |
-| TP-SSHD-05 | POSIX Linux non-root: numbered **2** is unknown (does not start); warns and redisplays; Exit 99 | `tests/test_cli.sh` | requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-SSHD-03 | POSIX Linux non-root TTY **server** submenu hides **22/23/24**; INFO names OS; status stays **21** | `tests/test_cli.sh` | requirement-shell-cli-default-interaction · requirement-domain-sshd | **have** |
+| TP-SSHD-04 | Termux mock TTY server submenu still shows **22/23/24**; client **11** dns; no non-root INFO | `tests/test_cli.sh` | requirement-shell-cli-default-interaction · requirement-domain-sshd · requirement-shell-termux-ish | **have** |
+| TP-SSHD-05 | POSIX Linux non-root: numbered **22** is unknown (does not start); warns and redisplays; **0** Back then **9** Exit | `tests/test_cli.sh` | requirement-shell-cli-default-interaction · requirement-domain-sshd · requirement-shell-interactive-vs-noninteractive | **have** |
 | TP-SSHD-06 | POSIX Linux non-root `stop` error names re-run as root; no Termux | `tests/test_cli.sh` | requirement-domain-sshd | **have** |
 | TP-SSHD-07 | Ship-unit start/stop/writable die copy is host-local (no “use Termux”) | `tests/test_cli.sh` | requirement-domain-sshd | **have** |
 | TP-SSHD-08 | POSIX Linux `start` already-running does not deny systemd / session-daemon | `tests/test_cli.sh` | requirement-domain-sshd | **have** |

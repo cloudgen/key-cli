@@ -56,20 +56,20 @@ run_test_config_backup() {
     _ec=$?
     assert_eq "TP-CFG-04 Termux backup-config exit 1" 1 "$_ec"
     assert_contains "TP-CFG-04 Termux not available" "$_err" "not available for termux"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" </dev/null 2>&1)
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" 2>&1)
     assert_contains "TP-CFG-04 Termux menu INFO" "$_out" "backup-config and sync-config not available for termux"
-    assert_not_contains "TP-CFG-04 Termux no row 8 backup-config" "$_out" "8. backup-config"
-    assert_contains "TP-CFG-04 Termux ssh row 6" "$_out" "6. ssh"
-    assert_contains "TP-CFG-04 Termux sync-from-remote row 8" "$_out" "8. sync-from-remote"
+    assert_not_contains "TP-CFG-04 Termux no backup-config row 15" "$_out" "15."
+    assert_contains "TP-CFG-04 Termux ssh row 12" "$_out" "12."
+    assert_contains "TP-CFG-04 Termux sync-from-remote row 18" "$_out" "18."
     ci_cleanup_env
 
     # TP-CFG-05 Git Bash menu INFO
     ci_isolated_env
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" </dev/null 2>&1)
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" 2>&1)
     assert_contains "TP-CFG-05 Git Bash menu INFO" "$_out" "backup-config and sync-config not available for gitbash"
-    assert_not_contains "TP-CFG-05 Git Bash no row 8 backup-config" "$_out" "8. backup-config"
-    assert_contains "TP-CFG-05 Git Bash ssh row 6" "$_out" "6. ssh"
-    assert_contains "TP-CFG-05 Git Bash sync-from-remote row 8" "$_out" "8. sync-from-remote"
+    assert_not_contains "TP-CFG-05 Git Bash no backup-config row 15" "$_out" "15."
+    assert_contains "TP-CFG-05 Git Bash ssh row 12" "$_out" "12."
+    assert_contains "TP-CFG-05 Git Bash sync-from-remote row 18" "$_out" "18."
     _err=$(HOME="${CI_HOME}" MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" sync-config 2>&1 >/dev/null)
     _ec=$?
     assert_eq "TP-CFG-05 Git Bash sync-config exit 1" 1 "$_ec"
@@ -106,10 +106,10 @@ run_test_config_backup() {
 
     # TP-CFG-09 Windows cmd menu INFO
     ci_isolated_env
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 OS=Windows_NT COMSPEC='C:\\Windows\\system32\\cmd.exe' env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" </dev/null 2>&1)
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 OS=Windows_NT COMSPEC='C:\\Windows\\system32\\cmd.exe' env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
     assert_contains "TP-CFG-09 Windows cmd menu INFO" "$_out" "backup-config and sync-config not available for windows-cmd"
-    assert_contains "TP-CFG-09 Windows cmd ssh row 6" "$_out" "6. ssh"
-    assert_contains "TP-CFG-09 Windows cmd sync-from-remote row 8" "$_out" "8. sync-from-remote"
+    assert_contains "TP-CFG-09 Windows cmd ssh row 12" "$_out" "12."
+    assert_contains "TP-CFG-09 Windows cmd sync-from-remote row 18" "$_out" "18."
     ci_cleanup_env
 
     # TP-CFG-10..15 sync-from-remote (fake scp; never a real SSH session)
@@ -191,9 +191,9 @@ FAKESCP
     assert_contains "TP-CFG-16 json host" "${_j}" '"host":"host.example.test"'
 
     # TP-CFG-17 TTY sudoers submenu unknown choice redisplays
-    _out=$(printf '%s\n' '10' '88' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
+    _out=$(printf '%s\n' '1' '17' '88' '0' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
     _ec=$?
-    assert_eq "TP-CFG-17 sudoers unknown then Exit 9 exit 0" 0 "$_ec"
+    assert_eq "TP-CFG-17 sudoers unknown then Back then Exit 9 exit 0" 0 "$_ec"
     assert_contains "TP-CFG-17 unknown sudoers named" "${_out}" "Unknown sudoers choice '88'"
     _n=$(t_count_substr "${_out}" "sudoers (grant and drafts)")
     assert_eq "TP-CFG-17 redisplays sudoers menu" "2" "$_n"

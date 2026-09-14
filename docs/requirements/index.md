@@ -2,13 +2,14 @@
 
 **Product:** sshd-cli — a POSIX `/bin/sh` program you run as yourself to install and run OpenSSH sshd on Termux (and ordinary Linux). Catalog: Type 0 self-install + domain SSOT.  
 **Workspace state:** Specialized product law (not blank genesis); **software-development** class; bootstrap origin **selfmanaged** (A → B).  
-**Updated:** 2026-09-12 (shell-sudoer + shell-config-backup SSOT)
+**Updated:** 2026-09-14 (independent CLI default-interaction / numbered tree)
 
 | ID / key | Title | Area | Status | Path | Updated |
 |----------|-------|------|--------|------|---------|
 | requirement-class-software-dev | Software-development class law + residual stack (posix-sh, no package tool) | class | Active | `requirement-class-software-dev.md` | 2026-09-09 |
 | requirement-shell-automatic-checksum | Automatic companion-digest integrity (transparent link/value/result; CHECKSUM not help/about) | shell | Active | `requirement-shell-automatic-checksum.md` | 2026-09-06 |
-| requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes; `wake-lock`; `BASHRC`; `rc-test` dual mention; `dns unset`; `ssh`; `download` / `upload` TTY user default; `download` `~/folder`; menu rows 6/7/8; TTY unknown choice redisplay) | shell | Active | `requirement-shell-cli-interface.md` | 2026-09-13 |
+| requirement-shell-cli-default-interaction | TTY numbered main menu (front 1/2/8, parent-prefix children, 0 Back, bold short / italic long) | shell | Active | `requirement-shell-cli-default-interaction.md` | 2026-09-14 |
+| requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes; `wake-lock`; `BASHRC`; `rc-test` dual mention; `dns unset`; `ssh`; `download` / `upload` TTY user default; `download` `~/folder`; menu dual mention; TTY unknown choice redisplay) | shell | Active | `requirement-shell-cli-interface.md` | 2026-09-14 |
 | requirement-shell-cli-storage | Scratch/cache storage resolve (per-user isolation, mkdir fail-soft, Git Bash AppData Temp) | shell | Active | `requirement-shell-cli-storage.md` | 2026-09-11 |
 | requirement-shell-cli-zero-arguments | Empty argv: TTY menu / non-TTY Type O install-ensure | shell | Active | `requirement-shell-cli-zero-arguments.md` | 2026-09-09 |
 | requirement-shell-idempotency | Shell idempotency / re-run safety for ensure-style ops | shell | Active | `requirement-shell-idempotency.md` | 2026-09-09 |

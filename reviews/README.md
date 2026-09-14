@@ -11,7 +11,7 @@ Public product review surface (peer of `tests/`).
 | `index.md` | Report index |
 | `reports/` | Dated review run reports |
 
-**Ship unit:** `src/sshd-cli` / `./sshd-cli` (**VERSION 1.19.2**)  
+**Ship unit:** `src/sshd-cli` / `./sshd-cli` (**VERSION 1.20.0**)  
 **Suite:** `./tests/run.sh`  
 **Last suite baseline:** see `test-plan.md`
 

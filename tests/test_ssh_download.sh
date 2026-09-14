@@ -156,10 +156,10 @@ EOF
     assert_contains "TP-SSH-08 log alias" "$_log" "${H_SSH}"
 
     # TP-SSH-09 TTY menu numbers ssh / download
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 \
-        sh "${SCRIPT}" </dev/null 2>&1)
-    assert_contains "TP-SSH-09 Termux menu ssh row 6" "$_out" "6. ssh"
-    assert_contains "TP-SSH-09 Termux menu download row 7" "$_out" "7. download"
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 \
+        sh "${SCRIPT}" 2>&1)
+    assert_contains "TP-SSH-09 Termux menu ssh row 12" "$_out" "12."
+    assert_contains "TP-SSH-09 Termux menu download row 13" "$_out" "13."
     assert_contains "TP-SSH-09 Termux menu user prompt not on main" "$_out" "Choose a number"
 
     # TP-DL-01 help lists download (also TP-SSH-01)

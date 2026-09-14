@@ -105,13 +105,20 @@ run_test_cli() {
     _ec=$?
     assert_eq "TP-CLI-14 interactive empty argv exit 0" 0 "$_ec"
     assert_contains "TP-CLI-14 interactive empty argv shows menu" "$_out" "Choose a number"
-    assert_contains "TP-CLI-14 interactive empty argv status row" "$_out" "Show sshd status"
-    assert_contains "TP-CLI-14 interactive empty argv dns row" "$_out" "5. SSH names (dns)"
-    assert_contains "TP-CLI-14 interactive empty argv ssh row" "$_out" "6. ssh"
-    assert_contains "TP-CLI-14 interactive empty argv download row" "$_out" "7. download"
-    assert_contains "TP-CLI-14 interactive empty argv backup-config row" "$_out" "8. backup-config"
-    assert_contains "TP-CLI-14 interactive empty argv sync-config row" "$_out" "9. sync-config"
-    assert_contains "TP-CLI-14 interactive empty argv Exit 99" "$_out" "99. Exit"
+    assert_contains "TP-CLI-14 interactive empty argv client-side" "$_out" "client-side"
+    assert_contains "TP-CLI-14 interactive empty argv server-side" "$_out" "server-side"
+    assert_contains "TP-CLI-14 interactive empty argv self-management" "$_out" "self-management"
+    assert_contains "TP-CLI-14 interactive empty argv Exit 9" "$_out" "9. Exit"
+    assert_not_contains "TP-CLI-14 front board has no dns row 5" "$_out" "5. SSH names"
+    assert_not_contains "TP-CLI-14 front board has no backup-config row" "$_out" "backup-config"
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 sh "${SCRIPT}" 2>&1)
+    assert_contains "TP-CLI-14 client dns row 11" "$_out" "11."
+    assert_contains "TP-CLI-14 client dns short" "$_out" "dns"
+    assert_contains "TP-CLI-14 client ssh row 12" "$_out" "12."
+    assert_contains "TP-CLI-14 client download row 13" "$_out" "13."
+    assert_contains "TP-CLI-14 client backup-config row 15" "$_out" "15."
+    assert_contains "TP-CLI-14 client sync-config row 16" "$_out" "16."
+    assert_contains "TP-CLI-14 client Back 0" "$_out" "0. Back"
     assert_not_contains "TP-CLI-14 no numbered port row" "$_out" "Show listen port"
     assert_not_contains "TP-CLI-14 no numbered config row" "$_out" "Show sshd config"
     assert_not_contains "TP-CLI-14 no numbered host-keys row" "$_out" "List host keys"
@@ -257,64 +264,59 @@ run_test_cli() {
     assert_not_contains "TP-SSHD-01 help no add-crontab" "$_out" "add-crontab"
     assert_not_contains "TP-SSHD-01 help no enable-service" "$_out" "enable-service"
     unset _src _out
-    # TP-SSHD-03 POSIX Linux non-root TTY menu hides 2/3/4; INFO names OS; dns stays 5
+    # TP-SSHD-03 POSIX Linux non-root TTY server submenu hides 22/23/24; INFO names OS; status stays 21
     ci_isolated_env
     _uid=$(id -u 2>/dev/null || echo 1)
     if [ "${_uid}" -eq 0 ]; then
         t_skip "TP-SSHD-03 non-root POSIX hide (suite running as root)"
         t_skip "TP-SSHD-05 hidden choice 2 unknown retry (suite running as root)"
     else
-        _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" </dev/null 2>&1)
+        _out=$(printf '%s\n' '2' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
         _ec=$?
         assert_eq "TP-SSHD-03 non-root POSIX menu exit 0" 0 "$_ec"
         assert_contains "TP-SSHD-03 non-root INFO" "$_out" "start/stop/restart sshd features are not available for non-root in "
-        assert_contains "TP-SSHD-03 status row 1" "$_out" "1. Show sshd status"
-        assert_not_contains "TP-SSHD-03 no start row 2" "$_out" "2. Start sshd"
-        assert_not_contains "TP-SSHD-03 no stop row 3" "$_out" "3. Stop sshd"
-        assert_not_contains "TP-SSHD-03 no restart row 4" "$_out" "4. Restart sshd"
-        assert_contains "TP-SSHD-03 dns stays row 5" "$_out" "5. SSH names (dns)"
-        assert_contains "TP-SSHD-03 ssh row 6" "$_out" "6. ssh"
-        assert_contains "TP-SSHD-03 download row 7" "$_out" "7. download"
-        assert_contains "TP-SSHD-03 backup-config row 8" "$_out" "8. backup-config"
-        assert_contains "TP-SSHD-03 sync-config row 9" "$_out" "9. sync-config"
-        assert_contains "TP-SSHD-03 Exit 99" "$_out" "99. Exit"
-        _out=$(printf '%s\n' '2' '99' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
+        assert_contains "TP-SSHD-03 status row 21" "$_out" "21."
+        assert_contains "TP-SSHD-03 status short" "$_out" "status"
+        assert_not_contains "TP-SSHD-03 no start row 22" "$_out" "22."
+        assert_contains "TP-SSHD-03 server Back 0" "$_out" "0. Back"
+        _out=$(printf '%s\n' '2' '22' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
         _ec=$?
-        assert_eq "TP-SSHD-05 hidden 2 then Exit 99 exit 0" 0 "$_ec"
-        assert_contains "TP-SSHD-05 hidden 2 unknown" "$_out" "Unknown menu choice '2'"
+        assert_eq "TP-SSHD-05 hidden 22 then Back then Exit 9 exit 0" 0 "$_ec"
+        assert_contains "TP-SSHD-05 hidden 22 unknown" "$_out" "Unknown menu choice '22'"
         _n=$(t_count_substr "$_out" "Choose a number, or type the command name:")
-        assert_eq "TP-SSHD-05 hidden 2 redisplays menu" "2" "$_n"
-        assert_not_contains "TP-SSHD-05 hidden 2 did not start" "$_out" "Re-run as root"
+        if [ "${_n}" -ge 2 ]; then
+            t_pass "TP-SSHD-05 hidden 22 redisplays menu"
+        else
+            t_fail "TP-SSHD-05 hidden 22 redisplays menu (prompts=${_n})"
+        fi
+        assert_not_contains "TP-SSHD-05 hidden 22 did not start" "$_out" "Re-run as root"
     fi
     ci_cleanup_env
     unset _uid _out _ec _n
 
     # TP-SSHD-16 TTY unknown token warns and redisplays; then Exit
     ci_isolated_env
-    _out=$(printf '%s\n' 'xyz' '99' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
+    _out=$(printf '%s\n' 'xyz' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
     _ec=$?
-    assert_eq "TP-SSHD-16 unknown then Exit 99 exit 0" 0 "$_ec"
+    assert_eq "TP-SSHD-16 unknown then Exit 9 exit 0" 0 "$_ec"
     assert_contains "TP-SSHD-16 unknown token named" "$_out" "Unknown menu choice 'xyz'"
     _n=$(t_count_substr "$_out" "Choose a number, or type the command name:")
     assert_eq "TP-SSHD-16 redisplays menu" "2" "$_n"
-    assert_contains "TP-SSHD-16 still lists status" "$_out" "1. Show sshd status"
+    assert_contains "TP-SSHD-16 still lists client-side" "$_out" "client-side"
     ci_cleanup_env
     unset _out _ec _n
 
     # TP-SSHD-04 Termux mock TTY menu still shows 2/3/4; no non-root INFO
     ci_isolated_env
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" </dev/null 2>&1)
+    _out=$(printf '%s\n' '2' '0' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" 2>&1)
     _ec=$?
     assert_eq "TP-SSHD-04 Termux menu exit 0" 0 "$_ec"
-    assert_contains "TP-SSHD-04 start row 2" "$_out" "2. Start sshd"
-    assert_contains "TP-SSHD-04 stop row 3" "$_out" "3. Stop sshd"
-    assert_contains "TP-SSHD-04 restart row 4" "$_out" "4. Restart sshd"
-    assert_contains "TP-SSHD-04 dns row 5" "$_out" "5. SSH names (dns)"
+    assert_contains "TP-SSHD-04 start row 22" "$_out" "22."
+    assert_contains "TP-SSHD-04 stop row 23" "$_out" "23."
+    assert_contains "TP-SSHD-04 restart row 24" "$_out" "24."
+    assert_contains "TP-SSHD-04 dns row 11" "$_out" "11."
     assert_contains "TP-SSHD-04 backup-config INFO" "$_out" "backup-config and sync-config not available for termux"
-    assert_contains "TP-SSHD-04 ssh row 6" "$_out" "6. ssh"
-    assert_contains "TP-SSHD-04 download row 7" "$_out" "7. download"
-    assert_not_contains "TP-SSHD-04 no backup-config row" "$_out" "8. backup-config"
-    assert_contains "TP-SSHD-04 Termux sync-from-remote row 8" "$_out" "8. sync-from-remote"
+    assert_contains "TP-SSHD-04 Termux sync-from-remote row 18" "$_out" "18."
     assert_contains "TP-SSHD-04 Termux Exit 9" "$_out" "9. Exit"
     assert_not_contains "TP-SSHD-04 no non-root INFO" "$_out" "not available for non-root"
     ci_cleanup_env

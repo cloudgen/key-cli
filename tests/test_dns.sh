@@ -186,14 +186,15 @@ EOF
         unset _i _hn _ip
     } > "${CI_HOME}/.ssh/config"
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns <<'EOF'
-1
+111
 9
 EOF
 )
     _ec=$?
     assert_eq "TP-DNS-13 pick 9 exit 0" 0 "$_ec"
-    assert_contains "TP-DNS-13 action menu Edit" "$_out" "1. Edit"
-    assert_contains "TP-DNS-13 action menu Exit 9" "$_out" "9. Exit"
+    assert_contains "TP-DNS-13 action menu Edit" "$_out" "111."
+    assert_contains "TP-DNS-13 action menu Edit short" "$_out" "Edit"
+    assert_contains "TP-DNS-13 action menu Back 0" "$_out" "0. Back"
     assert_contains "TP-DNS-13 pick 9 shows host" "$_out" "dns:  ${H_N9}"
     assert_contains "TP-DNS-13 pick 9 ip" "$_out" "ip:   ${IP_N9}"
     assert_contains "TP-DNS-13 Host pick leave 0" "$_out" "0. Exit"
@@ -295,31 +296,34 @@ EOF
     # TP-DNS-20 TTY menu row 5 opens the Host list (discoverable dns)
     _dns_fixture
     _out=$(HOME="${CI_HOME}" TTY=1 INTERACTIVE=1 sh "${SCRIPT}" menu <<'EOF'
-5
+1
+11
+0
+0
 9
 EOF
 )
     _ec=$?
-    assert_eq "TP-DNS-20 menu 5 exit 0" 0 "$_ec"
-    assert_contains "TP-DNS-20 menu lists dns row" "$_out" "5. SSH names (dns)"
-    assert_contains "TP-DNS-20 choice 5 lists first host" "$_out" "${H_A}"
-    assert_contains "TP-DNS-20 action Edit" "$_out" "1. Edit"
-    assert_contains "TP-DNS-20 action Add" "$_out" "2. Add"
-    assert_contains "TP-DNS-20 action Delete" "$_out" "3. Delete"
-    assert_contains "TP-DNS-20 action Unset" "$_out" "4. Unset"
-    assert_contains "TP-DNS-20 action Exit 9" "$_out" "9. Exit"
+    assert_eq "TP-DNS-20 menu 11 exit 0" 0 "$_ec"
+    assert_contains "TP-DNS-20 menu lists dns row" "$_out" "11."
+    assert_contains "TP-DNS-20 choice 11 lists first host" "$_out" "${H_A}"
+    assert_contains "TP-DNS-20 action Edit" "$_out" "111."
+    assert_contains "TP-DNS-20 action Add" "$_out" "112."
+    assert_contains "TP-DNS-20 action Delete" "$_out" "113."
+    assert_contains "TP-DNS-20 action Unset" "$_out" "114."
+    assert_contains "TP-DNS-20 action Back 0" "$_out" "0. Back"
     assert_not_contains "TP-DNS-20 context is not Host pick 1." "$_out" "1. ${H_A}"
 
     # TP-DNS-21 TTY Edit then Host 1 (action menu, not pick-to-update)
     _dns_fixture
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns <<'EOF'
-1
+111
 1
 EOF
 )
     _ec=$?
     assert_eq "TP-DNS-21 edit via action menu exit 0" 0 "$_ec"
-    assert_contains "TP-DNS-21 action Edit" "$_out" "1. Edit"
+    assert_contains "TP-DNS-21 action Edit" "$_out" "111."
     assert_contains "TP-DNS-21 Host pick first" "$_out" "1. ${H_A}"
     assert_contains "TP-DNS-21 shows first details" "$_out" "dns:  ${H_A}"
 
@@ -339,7 +343,7 @@ EOF
     # TP-DNS-23 TTY delete cancel (n)
     _dns_fixture
     _out=$(HOME="${CI_HOME}" TTY=1 INTERACTIVE=1 sh "${SCRIPT}" dns <<'EOF'
-3
+113
 1
 n
 EOF
@@ -353,7 +357,7 @@ EOF
     # TP-DNS-24 TTY delete yes
     _dns_fixture
     _out=$(HOME="${CI_HOME}" TTY=1 INTERACTIVE=1 sh "${SCRIPT}" dns <<'EOF'
-3
+113
 1
 y
 EOF
@@ -607,14 +611,14 @@ EOF
     # TP-DNS-44 TTY action Unset then field pick; HostName stays
     _dns_fixture
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns <<'EOF'
-4
+114
 2
 1
 EOF
 )
     _ec=$?
     assert_eq "TP-DNS-44 tty unset walk exit 0" 0 "$_ec"
-    assert_contains "TP-DNS-44 action Unset" "$_out" "4. Unset"
+    assert_contains "TP-DNS-44 action Unset" "$_out" "114."
     _out=$(HOME="${CI_HOME}" sh "${SCRIPT}" dns show "${H_B}" 2>&1)
     assert_contains "TP-DNS-44 user cleared" "$_out" "user: empty"
     assert_contains "TP-DNS-44 ip stays after tty unset" "$_out" "ip:   ${IP_B}"
@@ -650,19 +654,19 @@ EOF
     _dns_fixture
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns 2>&1 <<'EOF'
 88
-9
+0
 EOF
 )
     _ec=$?
-    assert_eq "TP-DNS-47 unknown action then Exit 9 exit 0" 0 "$_ec"
+    assert_eq "TP-DNS-47 unknown action then Back 0 exit 0" 0 "$_ec"
     assert_contains "TP-DNS-47 unknown action named" "$_out" "Unknown dns action '88'"
-    _n=$(t_count_substr "$_out" "1. Edit")
+    _n=$(t_count_substr "$_out" "111.")
     assert_eq "TP-DNS-47 redisplays action menu" "2" "$_n"
 
     # TP-DNS-48 TTY unknown Host pick warns and redisplays
     _dns_fixture
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns 2>&1 <<'EOF'
-1
+111
 99
 0
 EOF
@@ -676,7 +680,7 @@ EOF
     # TP-DNS-49 TTY unknown extra-settings pick warns and redisplays
     _dns_fixture
     _out=$(HOME="${CI_HOME}" INTERACTIVE=1 sh "${SCRIPT}" dns 2>&1 <<'EOF'
-4
+114
 2
 99
 0
