@@ -1,6 +1,7 @@
 # key-cli - Backup and restore SSH user keys
 
 ![Version](https://img.shields.io/badge/Version-2.0.3-blue?style=flat-square)
+[![Stars](https://img.shields.io/github/stars/cloudgen/key-cli?style=flat-square)](https://github.com/cloudgen/key-cli)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 

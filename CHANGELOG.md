@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.0.3] - 2026-09-16
 
+### Changed
+
+- Public channel is **https://github.com/cloudgen/key-cli** (`private=false`). Install: `curl -fsSL https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli | sh`.
+
 ### Fixed
 
 - **key-adm** (the one LPU): `setup` / `remove-lpu` Next names `sudo key-cli …`; Termux fail-closed; F6 is six product Cmnds. Tests **TP-CFG-25** .. **TP-CFG-27**.
