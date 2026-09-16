@@ -286,6 +286,9 @@ run_test_cli() {
     assert_contains "TP-KEY-10 json username bob" "$(cat "${_req}")" '"username":"bob"'
     assert_contains "TP-KEY-10 json submitter" "$(cat "${_req}")" "\"submitter\":\"${_user}\""
     assert_contains "TP-KEY-10 json public_key" "$(cat "${_req}")" "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop"
+    assert_contains "TP-KEY-10 json kind" "$(cat "${_req}")" '"kind":"auth-key"'
+    assert_contains "TP-KEY-10 json submit_app" "$(cat "${_req}")" '"submit_app":"key-cli"'
+    assert_contains "TP-KEY-10 json submit_version" "$(cat "${_req}")" '"submit_version":"'
     ci_cleanup_env
 
     # TP-KEY-11 missing inbound fail-closed + Next setup
@@ -398,5 +401,55 @@ run_test_cli() {
     assert_contains "TP-KEY-20 POSIX request row 15" "$_out" "15."
     _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" 2>&1)
     assert_not_contains "TP-KEY-20 Termux hides 15" "$_out" "15."
+    ci_cleanup_env
+
+    # TP-KEY-21 n walks accepted: second request gets add-2
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/bob/.ssh" "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 700 "${_homes}/bob/.ssh"
+    chmod 1777 "${_store}/auth-key-request"
+    chmod 0751 "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" sh "${SCRIPT}" auth-keys approve "${_base}" >/dev/null 2>&1
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" >/dev/null 2>&1
+    assert_file_exists "TP-KEY-21 second request is add-2" "${_store}/auth-key-request/authkey-${_day}-bob-${_user}-add-2.json"
+    ci_cleanup_env
+
+    # TP-KEY-22 approve of incorrect JSON fail-closed (file stays inbound)
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 1777 "${_store}/auth-key-request"
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    printf '%s\n' '{"schema_version":1,"purpose":"bad","username":"bob","submitter":"alice"}' > "${_store}/auth-key-request/${_base}"
+    _err=$(HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" sh "${SCRIPT}" auth-keys approve "${_base}" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-KEY-22 bad json approve exit 1" 1 "$_ec"
+    assert_contains "TP-KEY-22 re-validation named" "$_err" "re-validation"
+    assert_file_exists "TP-KEY-22 inbound kept" "${_store}/auth-key-request/${_base}"
+    ci_cleanup_env
+
+    # TP-KEY-23 interactive skips incorrect JSON and does not ask yes/no
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 1777 "${_store}/auth-key-request"
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    printf '%s\n' 'not-json' > "${_store}/auth-key-request/${_base}"
+    _out=$(printf '%s\n' 'y' | HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" TTY=1 sh "${SCRIPT}" auth-keys interactive 2>&1)
+    _ec=$?
+    assert_eq "TP-KEY-23 interactive bad json exit 0" 0 "$_ec"
+    assert_contains "TP-KEY-23 incorrect JSON format named" "$_out" "Incorrect JSON format"
+    assert_not_contains "TP-KEY-23 no approval question" "$_out" "Approve this request"
     ci_cleanup_env
 }

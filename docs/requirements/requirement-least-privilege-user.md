@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This requirement is the product law for the **key-adm** least-privilege user: the dedicated non-root operator who may **backup another user’s `.ssh` folder** and **append that user’s `authorized_keys`** using sudo of `key-cli` (not a root shell).
+This requirement is the product law for the **key-adm** least-privilege user: the dedicated non-root operator who may **backup another user’s `.ssh` folder**, **append that user’s `authorized_keys`**, and **approve or reject the product-local file-based JSON queue** (`auth-key-request/` → accepted/declined) using sudo of `key-cli` (not a root shell).
 
 Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This file owns F1–F7 for **key-adm**, `setup`, and `remove-lpu`.
 
@@ -23,7 +23,7 @@ Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This fi
 | Includes | Excludes |
 |----------|----------|
 | Account identity, home, F6 sudoers, setup/remove | Approving sudoers JSON (that is sudoer-adm) |
-| On-behalf backup and authorized_keys append | `ALL=(ALL) ALL`; writing `/etc/passwd` by hand |
+| On-behalf backup, authorized_keys append, and file-based JSON approval of auth-key requests | `ALL=(ALL) ALL`; writing `/etc/passwd` by hand; dest inbound |
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
@@ -34,7 +34,7 @@ Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This fi
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
 | Create the operator | Root login creates UID 1666 and F6 | `key-cli setup` as root |
-| Use it | Login as key-adm, then backup another user | `key-cli backup alice` |
+| Use it | Login as key-adm, then backup another user or review queued public keys | `key-cli backup alice` · `key-cli auth-keys pending` |
 | Tear it down | Root removes the account; archives stay | `key-cli remove-lpu --force` |
 
 ## 2. Core Rules / Requirements (Mandatory)

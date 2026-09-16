@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.1] - 2026-09-16
+
+### Fixed
+
+- File-based JSON approval for **key-adm** is complete: request JSON stamps `kind`, `submit_app`, `submit_version`; `n` walks inbound ∪ accepted ∪ declined; approve re-validates then **chown as key-adm** before move; `interactive` prints incorrect JSON format and **does not** ask yes/no. Tests **TP-KEY-21** .. **TP-KEY-23**.
+
 ## [2.1.0] - 2026-09-16
 
 ### Added

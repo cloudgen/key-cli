@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/key-cli` / `./key-cli`  
-**Product VERSION:** 2.1.0  
+**Product VERSION:** 2.1.1  
 **Last plan update:** 2026-09-16  
-**Last suite run:** PASS=331 FAIL=0 SKIP=0 (2026-09-16)
+**Last suite run:** PASS=341 FAIL=0 SKIP=0 (2026-09-16)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
@@ -82,6 +82,9 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-KEY-17 | Termux `auth-keys request` fail-closed | test_cli | requirement-domain-key · requirement-shell-termux-ish | **have** |
 | TP-KEY-18 | public-key line with `"` refused | test_cli | requirement-domain-key | **have** |
 | TP-KEY-20 | TTY keys **15** on POSIX; hidden on Termux | test_cli | requirement-domain-key · requirement-shell-cli-default-interaction | **have** |
+| TP-KEY-21 | request `n` walks accepted (second file is add-2) | test_cli | requirement-domain-key | **have** |
+| TP-KEY-22 | approve of incorrect JSON fail-closed; inbound kept | test_cli | requirement-domain-key | **have** |
+| TP-KEY-23 | interactive skips incorrect JSON; no yes/no | test_cli | requirement-domain-key | **have** |
 
 ### TP-CFG (archive deposit / restore / sudoers / auth-keys)
 

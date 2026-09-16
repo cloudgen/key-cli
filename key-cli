@@ -56,8 +56,8 @@ APP_NAME="key-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, queue a public key for another account for key-adm to approve, and (as key-adm) do the same on behalf of other users.}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="2.1.0"
-: "${VERSION:=2.1.0}"
+VERSION="2.1.1"
+: "${VERSION:=2.1.1}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -3809,23 +3809,25 @@ key_auth_key_valid_basename() {
 }
 
 key_auth_key_next_path() {
-    local _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+    local _ak_subject _ak_submitter _ak_in _ak_acc _ak_dec _ak_day _ak_n _ak_base
     _ak_subject="${1-}"
     _ak_submitter="${2-}"
     _ak_in=$(key_auth_key_inbound_dir)
+    _ak_acc=$(key_auth_key_accepted_dir)
+    _ak_dec=$(key_auth_key_declined_dir)
     _ak_day=$(date +%Y%m%d)
     _ak_n=1
-    _ak_path=""
+    _ak_base=""
     while :; do
-        _ak_path="${_ak_in}/authkey-${_ak_day}-${_ak_subject}-${_ak_submitter}-add-${_ak_n}.json"
-        if [ ! -e "${_ak_path}" ]; then
-            printf '%s' "${_ak_path}"
-            unset _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+        _ak_base="authkey-${_ak_day}-${_ak_subject}-${_ak_submitter}-add-${_ak_n}.json"
+        if [ ! -e "${_ak_in}/${_ak_base}" ] && [ ! -e "${_ak_acc}/${_ak_base}" ] && [ ! -e "${_ak_dec}/${_ak_base}" ]; then
+            printf '%s' "${_ak_in}/${_ak_base}"
+            unset _ak_subject _ak_submitter _ak_in _ak_acc _ak_dec _ak_day _ak_n _ak_base
             return 0
         fi
         _ak_n=$((_ak_n + 1))
         if [ "${_ak_n}" -gt 9999 ]; then
-            unset _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+            unset _ak_subject _ak_submitter _ak_in _ak_acc _ak_dec _ak_day _ak_n _ak_base
             return 1
         fi
     done
@@ -3838,9 +3840,87 @@ key_auth_key_write_json() {
     _ak_submitter="${3-}"
     _ak_key="${4-}"
     : "${APP_NAME:=key-cli}"
-    printf '%s\n' "{\"schema_version\":1,\"purpose\":\"Allow ${_ak_submitter} to SSH as ${_ak_subject}.\",\"username\":\"${_ak_subject}\",\"submitter\":\"${_ak_submitter}\",\"service\":\"${APP_NAME}\",\"action\":\"add\",\"public_key\":\"${_ak_key}\"}" >"${_ak_path}" || return 1
+    : "${VERSION:=2.1.1}"
+    printf '%s\n' "{\"schema_version\":1,\"purpose\":\"Allow ${_ak_submitter} to SSH as ${_ak_subject}.\",\"username\":\"${_ak_subject}\",\"submitter\":\"${_ak_submitter}\",\"service\":\"${APP_NAME}\",\"kind\":\"auth-key\",\"action\":\"add\",\"submit_app\":\"${APP_NAME}\",\"submit_version\":\"${VERSION}\",\"public_key\":\"${_ak_key}\"}" >"${_ak_path}" || return 1
     chmod 0644 "${_ak_path}" 2>/dev/null || true
     unset _ak_path _ak_subject _ak_submitter _ak_key
+    return 0
+}
+
+# Return 0 if inbound JSON is a regular file matching this product schema.
+# On failure print a short human reason on stdout (for interactive fence-first).
+key_auth_key_validate_file() {
+    local _ak_file _ak_base _ak_ver _ak_svc _ak_kind _ak_act _ak_subject _ak_submitter _ak_key _ak_sapp _ak_sver
+    _ak_file="${1-}"
+    _ak_base=$(basename -- "${_ak_file}" 2>/dev/null || true)
+    if [ -z "${_ak_file}" ] || [ ! -e "${_ak_file}" ]; then
+        printf '%s' "missing inbound file"
+        return 1
+    fi
+    if [ -L "${_ak_file}" ] || [ ! -f "${_ak_file}" ]; then
+        printf '%s' "not a regular file"
+        return 1
+    fi
+    if ! key_auth_key_valid_basename "${_ak_base}"; then
+        printf '%s' "invalid basename"
+        return 1
+    fi
+    _ak_ver=$(sed -n 's/.*"schema_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${_ak_file}" | head -n 1)
+    _ak_svc=$(key_auth_key_json_string_field "${_ak_file}" "service")
+    _ak_kind=$(key_auth_key_json_string_field "${_ak_file}" "kind")
+    _ak_act=$(key_auth_key_json_string_field "${_ak_file}" "action")
+    _ak_subject=$(key_auth_key_json_string_field "${_ak_file}" "username")
+    _ak_submitter=$(key_auth_key_json_string_field "${_ak_file}" "submitter")
+    _ak_key=$(key_auth_key_json_string_field "${_ak_file}" "public_key")
+    _ak_sapp=$(key_auth_key_json_string_field "${_ak_file}" "submit_app")
+    _ak_sver=$(key_auth_key_json_string_field "${_ak_file}" "submit_version")
+    if [ "${_ak_ver}" != "1" ] || [ "${_ak_svc}" != "key-cli" ] || [ "${_ak_kind}" != "auth-key" ] || [ "${_ak_act}" != "add" ]; then
+        printf '%s' "schema, service, kind, or action"
+        return 1
+    fi
+    if ! key_valid_username "${_ak_subject}" || ! key_valid_username "${_ak_submitter}"; then
+        printf '%s' "username or submitter"
+        return 1
+    fi
+    if [ -z "${_ak_sapp}" ] || [ -z "${_ak_sver}" ]; then
+        printf '%s' "missing submit_app or submit_version"
+        return 1
+    fi
+    case "${_ak_key}" in
+        ssh-rsa\ *|ssh-ed25519\ *|ecdsa-sha2-nistp*\ *|sk-ssh-*)
+            ;;
+        *)
+            printf '%s' "public_key"
+            return 1
+            ;;
+    esac
+    case "${_ak_key}" in
+        *\"*|*'\\'*)
+            printf '%s' "public_key quote"
+            return 1
+            ;;
+    esac
+    unset _ak_file _ak_base _ak_ver _ak_svc _ak_kind _ak_act _ak_subject _ak_submitter _ak_key _ak_sapp _ak_sver
+    return 0
+}
+
+key_auth_key_take_then_move() {
+    local _ak_src _ak_dest _ak_owner
+    _ak_src="${1-}"
+    _ak_dest="${2-}"
+    _ak_owner=$(key_adm_user)
+    if [ -z "${_ak_src}" ] || [ -z "${_ak_dest}" ] || [ ! -e "${_ak_src}" ]; then
+        return 1
+    fi
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        chown "${_ak_owner}" "${_ak_src}" || return 1
+    elif [ "$(key_invoking_login)" = "${_ak_owner}" ]; then
+        chown "${_ak_owner}" "${_ak_src}" 2>/dev/null || true
+    else
+        return 1
+    fi
+    mv "${_ak_src}" "${_ak_dest}" || return 1
+    unset _ak_src _ak_dest _ak_owner
     return 0
 }
 
@@ -3976,7 +4056,7 @@ key_cmd_auth_keys_approve() {
     : "${APP_NAME:=key-cli}"
     : "${JSON:=0}"
     : "${QUIET:=0}"
-    local _ak_base _ak_el _ak_in _ak_acc _ak_src _ak_ver _ak_svc _ak_act _ak_subject _ak_submitter _ak_key _ak_tmp _ak_save_json _ak_save_quiet
+    local _ak_base _ak_el _ak_in _ak_acc _ak_src _ak_why _ak_subject _ak_submitter _ak_key _ak_tmp _ak_save_json _ak_save_quiet
     key_refuse_auth_key_queue_on_nuser
     _ak_base="${1-}"
     if [ -z "${_ak_base}" ]; then
@@ -3994,33 +4074,14 @@ key_cmd_auth_keys_approve() {
     _ak_in=$(key_auth_key_inbound_dir)
     _ak_acc=$(key_auth_key_accepted_dir)
     _ak_src="${_ak_in}/${_ak_base}"
-    if [ ! -f "${_ak_src}" ]; then
-        out_die "Auth-key request not in inbound: ${_ak_base}"
+    _ak_why=$(key_auth_key_validate_file "${_ak_src}")
+    _ak_el=$?
+    if [ "${_ak_el}" -ne 0 ]; then
+        out_die "Auth-key request ${_ak_base} failed re-validation (${_ak_why:-incorrect JSON format})."
     fi
-    _ak_ver=$(sed -n 's/.*"schema_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${_ak_src}" | head -n 1)
-    _ak_svc=$(key_auth_key_json_string_field "${_ak_src}" "service")
-    _ak_act=$(key_auth_key_json_string_field "${_ak_src}" "action")
     _ak_subject=$(key_auth_key_json_string_field "${_ak_src}" "username")
     _ak_submitter=$(key_auth_key_json_string_field "${_ak_src}" "submitter")
     _ak_key=$(key_auth_key_json_string_field "${_ak_src}" "public_key")
-    if [ "${_ak_ver}" != "1" ] || [ "${_ak_svc}" != "${APP_NAME}" ] || [ "${_ak_act}" != "add" ]; then
-        out_die "Auth-key request ${_ak_base} failed re-validation (schema/service/action)."
-    fi
-    if ! key_valid_username "${_ak_subject}" || ! key_valid_username "${_ak_submitter}"; then
-        out_die "Auth-key request ${_ak_base} failed re-validation (username/submitter)."
-    fi
-    case "${_ak_key}" in
-        ssh-rsa\ *|ssh-ed25519\ *|ecdsa-sha2-nistp*\ *|sk-ssh-*)
-            ;;
-        *)
-            out_die "Auth-key request ${_ak_base} failed re-validation (public_key)."
-            ;;
-    esac
-    case "${_ak_key}" in
-        *\"*|*'\\'*)
-            out_die "Auth-key request ${_ak_base} failed re-validation (public_key quote)."
-            ;;
-    esac
     if [ ! -d "${_ak_acc}" ]; then
         out_die "Auth-key accepted folder is missing (${_ak_acc}). Next: sudo ${APP_NAME} setup"
     fi
@@ -4034,7 +4095,8 @@ key_cmd_auth_keys_approve() {
     JSON="${_ak_save_json}"
     QUIET="${_ak_save_quiet}"
     rm -f "${_ak_tmp}"
-    mv "${_ak_src}" "${_ak_acc}/${_ak_base}" || out_die "Appended the key but could not move ${_ak_base} to accepted."
+    key_auth_key_take_then_move "${_ak_src}" "${_ak_acc}/${_ak_base}" \
+        || out_die "Appended the key but could not take ownership and move ${_ak_base} to accepted."
     out_success "Approved ${_ak_base}: appended public key for ${_ak_subject} (submitter ${_ak_submitter})."
     if [ "${JSON}" -eq 1 ]; then
         out_json "auth-keys-approve" "accepted" \
@@ -4068,13 +4130,14 @@ key_cmd_auth_keys_reject() {
     _ak_in=$(key_auth_key_inbound_dir)
     _ak_dec=$(key_auth_key_declined_dir)
     _ak_src="${_ak_in}/${_ak_base}"
-    if [ ! -f "${_ak_src}" ]; then
-        out_die "Auth-key request not in inbound: ${_ak_base}"
+    if [ -L "${_ak_src}" ] || [ ! -f "${_ak_src}" ]; then
+        out_die "Auth-key request not a regular inbound file: ${_ak_base}"
     fi
     if [ ! -d "${_ak_dec}" ]; then
         out_die "Auth-key declined folder is missing (${_ak_dec}). Next: sudo ${APP_NAME} setup"
     fi
-    mv "${_ak_src}" "${_ak_dec}/${_ak_base}" || out_die "Cannot move ${_ak_base} to declined."
+    key_auth_key_take_then_move "${_ak_src}" "${_ak_dec}/${_ak_base}" \
+        || out_die "Cannot take ownership and move ${_ak_base} to declined."
     out_success "Rejected ${_ak_base}."
     if [ "${JSON}" -eq 1 ]; then
         out_json "auth-keys-reject" "declined" \
@@ -4090,7 +4153,7 @@ key_cmd_auth_keys_interactive() {
     : "${JSON:=0}"
     : "${QUIET:=0}"
     : "${TTY:=0}"
-    local _ak_el _ak_in _ak_any _ak_f _ak_b _ak_u _ak_s _ak_k
+    local _ak_el _ak_in _ak_any _ak_f _ak_b _ak_u _ak_s _ak_k _ak_why
     key_refuse_auth_key_queue_on_nuser
     if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
         out_die "auth-keys interactive needs a terminal. Next: ${APP_NAME} auth-keys pending, then ${APP_NAME} auth-keys approve <basename>."
@@ -4107,9 +4170,14 @@ key_cmd_auth_keys_interactive() {
     fi
     _ak_any=0
     for _ak_f in "${_ak_in}"/authkey-*.json; do
-        [ -f "${_ak_f}" ] || continue
+        [ -e "${_ak_f}" ] || continue
         _ak_any=1
         _ak_b=$(basename -- "${_ak_f}")
+        _ak_why=$(key_auth_key_validate_file "${_ak_f}")
+        if [ $? -ne 0 ]; then
+            out_warn "Incorrect JSON format for ${_ak_b}: ${_ak_why}. Skipping yes/no."
+            continue
+        fi
         _ak_u=$(key_auth_key_json_string_field "${_ak_f}" "username")
         _ak_s=$(key_auth_key_json_string_field "${_ak_f}" "submitter")
         _ak_k=$(key_auth_key_json_string_field "${_ak_f}" "public_key")
@@ -4590,7 +4658,7 @@ key_cmd_setup() {
         || out_die "Cannot create auth-key queue directories under ${_root}."
     chown root:root "${_root}/auth-key-request" "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
     chmod 1733 "${_root}/auth-key-request" 2>/dev/null || true
-    chmod 0750 "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
+    chmod 0751 "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
     _f6=$(key_lpu_sudoers_path)
     _f6dir=$(dirname -- "${_f6}")
     mkdir -p "${_f6dir}" || out_die "Cannot create ${_f6dir}."

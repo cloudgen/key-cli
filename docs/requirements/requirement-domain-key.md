@@ -1,5 +1,5 @@
 **file**: docs/requirements/requirement-domain-key.md  
-**Status**: Active (Version 2.1.0)  
+**Status**: Active (Version 2.1.1)  
 **Area**: domain  
 **Key**: `requirement-domain-key`  
 **Philosophy**: CIAO **v2.10.2** / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered / Over-protect)
@@ -44,9 +44,9 @@ Type 0 install/self-update/self-uninstall stay on the shell lifecycle requiremen
 
 ## 2. Core Rules / Requirements (Mandatory)
 
-### 2.0 Auth-key workflow machine (product-local; not dest)
+### 2.0 Auth-key workflow machine (file-based JSON approval; product-local; not dest)
 
-**One sentence:** Folder is the state; the JSON file is the checkable proposal. A writes JSON into inbound; key-adm re-validates and **moves** it (approve also appends B’s `authorized_keys`).
+This is the product’s **file-based JSON approval** instance. **key-adm** is the approver. Folder is the state; the JSON file is the checkable proposal. A writes JSON into inbound; key-adm re-validates and **moves** it (approve also appends B’s `authorized_keys`). **MUST NOT** treat CLI `--json` status as the request file.
 
 | Role | Product name | What they do |
 |------|--------------|--------------|
@@ -68,6 +68,7 @@ Type 0 install/self-update/self-uninstall stay on the shell lifecycle requiremen
 | Username B is a safe login name | Path-unsafe / empty → `out_die` |
 | Public-key file readable; one `ssh-ed25519` / `ssh-rsa` / ecdsa / `sk-ssh-` line | Missing / no key line → `out_die` |
 | That line contains no `"` | Quote → `out_die` (JSON body stays unescaped) |
+| Allocator stamps `submit_app` / `submit_version` from live Config | Missing stamps → `out_die`. Type 0 **MUST NOT** write `submit_by` |
 | Host is POSIX Linux | Termux / Git Bash / Windows cmd → `out_die` |
 
 **Verify at approve (hostile inbound):**
@@ -75,25 +76,26 @@ Type 0 install/self-update/self-uninstall stay on the shell lifecycle requiremen
 | Check | Fail |
 |-------|------|
 | Operand is a basename only (`authkey-{{YYYYMMDD}}-{{subject}}-{{submitter}}-add-{{n}}.json`) | `/` or `..` or mismatch → `out_die` |
-| File is in inbound | Missing → `out_die` |
-| `schema_version` is `1`; `service` is `key-cli`; `action` is `add` | Else → `out_die` (leave file; do not move) |
+| File is a regular file in inbound (not a symlink) | Missing / not regular → `out_die` |
+| `schema_version` is `1`; `service` is `key-cli`; `kind` is `auth-key`; `action` is `add` | Else → `out_die` (leave file; do not move) |
 | `username` and `submitter` pass the same username grammar | Else → `out_die` |
 | `public_key` still matches the key-line grammar and has no `"` | Else → `out_die` |
-| Then append via `auth-keys add` (global backup first) and **move** inbound → accepted | Add fail → do not move |
+| `submit_app` and `submit_version` are non-empty strings | Missing / empty → `out_die`. **MUST NOT** fail because those values ≠ this binary’s identity |
+| Then take file-ownership as **key-adm**, append via `auth-keys add` (global backup first), and **move** inbound → accepted | `chown` as root fail / add fail → do not move |
 
-Reject re-validates the basename, then **moves** inbound → declined (does not append).
+Reject re-validates the basename and that the inbound path is a regular file, then takes ownership as **key-adm** and **moves** inbound → declined (does not append).
 
-**Approval question** (`auth-keys interactive`): one-off yes/no per waiting file. Yes = approve. No / Enter = reject. **MUST NOT** skip / quit / maybe. **MUST NOT** `$()` `prompt_yes_no`. Direct `approve` / `reject` with a basename stay non-interactive. `--json` / quiet / non-TTY **MUST** fail closed for `interactive`.
+**Approval question** (`auth-keys interactive`): **format first**. If the file is not valid JSON for this schema, print that in human-facing words and **MUST NOT** ask yes/no (continue to the next file). If the file is valid: one-off yes/no. Yes = approve. No / Enter = reject. **MUST NOT** skip / quit / maybe. **MUST NOT** `$()` `prompt_yes_no`. Direct `approve` / `reject` with a basename stay non-interactive. `--json` / quiet / non-TTY **MUST** fail closed for `interactive`. This format check is **product-local**, not a dest fence requirement.
 
 **Three directories** (under `{{KEY_CLI_ROOT}}`, default `/var/key-cli`):
 
 | Folder | Role | Production mode |
 |--------|------|-----------------|
 | `auth-key-request/` | inbound | `1733` `root:root` (sticky dropbox). Tests **MAY** use `1777` under a writable `KEY_CLI_ROOT` |
-| `auth-key-accepted/` | accepted | `0750` `root:root` |
-| `auth-key-declined/` | declined | `0750` `root:root` |
+| `auth-key-accepted/` | accepted | `0751` `root:root` (other execute so Type 0 can probe a known name) |
+| `auth-key-declined/` | declined | `0751` `root:root` |
 
-`setup` **MUST** create all three. Type 0 **MUST NOT** create them.
+`setup` **MUST** create all three. Type 0 **MUST NOT** create them. Sequence number `n` **MUST** walk inbound ∪ accepted ∪ declined for the same date+subject+submitter+action.
 
 This machine is **product-local**. **MUST NOT** write dest fence requirements or a dest `fence-test` for it. Class residual stays **no dest approver**.
 
@@ -184,12 +186,15 @@ Worked sample basename: `authkey-20260916-bob-alice-add-1.json`
   "username": "bob",
   "submitter": "alice",
   "service": "key-cli",
+  "kind": "auth-key",
   "action": "add",
+  "submit_app": "key-cli",
+  "submit_version": "2.1.1",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice@laptop"
 }
 ```
 
-`public_key` **MUST** be one OpenSSH public-key line. **MUST NOT** contain `"`. **MUST NOT** queue a private key.
+`public_key` **MUST** be one OpenSSH public-key line. **MUST NOT** contain `"`. **MUST NOT** queue a private key. Type 0 **MUST** stamp `submit_app` / `submit_version` from live Config. Type 0 **MUST NOT** write `submit_by`.
 
 **On-behalf rule:** If the operand username is not the invoking login (`SUDO_USER` when elevated), the command **MUST** fail closed unless the invoker is **key-adm** or a **root login** (no `SUDO_USER`, or `SUDO_USER` is `root` or `key-adm`). **MUST NOT** let a normal login `sudo key-cli backup otheruser`.
 
@@ -219,7 +224,7 @@ JSON `about` **MUST** add `key_cli_root`, `key_adm`, `key_adm_present`.
 
 | Item | Value |
 |------|--------|
-| Product | `key-cli` 2.1.0 |
+| Product | `key-cli` 2.1.1 |
 | Domain prefix | `key_*` |
 | Channel | `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli` |
 | LPU | `key-adm` UID/GID **1666**, home `/etc/key-adm`, F6 `/etc/key-adm/sudoers` |
@@ -284,7 +289,7 @@ When the ship unit detects Termux, Git Bash, Windows cmd, or the same class: Typ
 
 | TP family / ID | Suite | Status |
 |----------------|-------|--------|
-| **TP-CLI-04**, **TP-CLI-14**, **TP-CLI-21**, **TP-KEY-01** .. **TP-KEY-09**, **TP-KEY-16**, **TP-KEY-10** .. **TP-KEY-15**, **TP-KEY-17**, **TP-KEY-18**, **TP-KEY-20** | `tests/test_cli.sh` | have |
+| **TP-CLI-04**, **TP-CLI-14**, **TP-CLI-21**, **TP-KEY-01** .. **TP-KEY-09**, **TP-KEY-16**, **TP-KEY-10** .. **TP-KEY-15**, **TP-KEY-17**, **TP-KEY-18**, **TP-KEY-20** .. **TP-KEY-23** | `tests/test_cli.sh` | have |
 | **TP-CFG-01** .. **TP-CFG-27** | `tests/test_config_backup.sh` | have |
 
 **Matrix:** `reviews/requirement-test-matrix.md`  

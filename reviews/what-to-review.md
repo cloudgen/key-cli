@@ -5,7 +5,7 @@
 **Always load first:** `reviews/lessons.md`
 
 **Last plan update:** 2026-09-16  
-**Ship unit VERSION:** 2.1.0  
+**Ship unit VERSION:** 2.1.1  
 **Suite baseline:** see `reviews/test-plan.md`
 
 ---
