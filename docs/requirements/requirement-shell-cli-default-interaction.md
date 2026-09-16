@@ -74,6 +74,7 @@ Every command row **MUST** print **number**, **bold** short description, *italic
 | **12** restore | POSIX Linux only |
 | **13** auth-keys | Always |
 | **14** sudoers | POSIX Linux only |
+| **15** request | POSIX Linux only (queue a public key for another account) |
 | **0** Back | Always |
 
 INFO before this list on Termux class: `backup and restore not available for …`.
@@ -84,10 +85,12 @@ INFO before this list on Termux class: `backup and restore not available for …
 |--------|-------|-----|
 | **21** backup | key-adm or root only |
 | **22** restore | Same as **21** |
-| **23** auth-keys | Same as **21** |
+| **23** auth-keys | Same as **21** (fast-path add) |
+| **24** pending | Same as **21** (list inbound auth-key JSON) |
+| **25** interactive | Same as **21** (one-off yes/no per waiting file) |
 | **0** Back | Always |
 
-When the invoker is not key-adm or root: omit row **2** on the front board (or print INFO `on-behalf features are not available except as key-adm`) and **MUST NOT** dispatch **21–23**. **MUST NOT** wrap `sudo` to unhide them.
+When the invoker is not key-adm or root: omit row **2** on the front board (or print INFO `on-behalf features are not available except as key-adm`) and **MUST NOT** dispatch **21–25**. **MUST NOT** wrap `sudo` to unhide them.
 
 ### 2.6 Self-management submenu (parent **8**)
 
@@ -127,7 +130,7 @@ Typed verb names still dispatch. Invalid choice: warn, reprint **this** layer, r
 
 ## Under command line for normal user only
 
-When Termux, Git Bash, or Windows cmd is detected: Type 1/2 unused; no in-tool sudo. **This requirement:** keys **11 / 12 / 14** stay hidden (INFO first); **13** auth-keys stays; on-behalf **2** stays hidden; self-management **81–86** stay Type 0. Git Bash and Windows cmd do not invoke Termux `pkg`.
+When Termux, Git Bash, or Windows cmd is detected: Type 1/2 unused; no in-tool sudo. **This requirement:** keys **11 / 12 / 14 / 15** stay hidden (INFO first); **13** auth-keys stays; on-behalf **2** stays hidden; self-management **81–86** stay Type 0. Git Bash and Windows cmd do not invoke Termux `pkg`.
 
 ## 3. Design Principles (CIAO / CIAO-Lite)
 

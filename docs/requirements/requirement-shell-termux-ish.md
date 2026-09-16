@@ -61,7 +61,7 @@ Interactive empty argv is the menu and **MUST NOT** run package ensure as a side
 
 ### 2.4 Elev fail closed
 
-On Termux / Git Bash / Windows cmd: `backup` / `restore` / `setup` / `remove-lpu` / sudoers verbs **MUST** fail closed. TTY keys board **MUST** print `[INFO] backup and restore not available for termux` (or `gitbash` / `windows-cmd`) and omit backup / restore / sudoers rows. This-login `auth-keys` **list** remains Type 0; `auth-keys add` **MUST** fail closed because a global backup is required. Dual mention: `requirement-shell-config-backup` · `requirement-domain-key`.
+On Termux / Git Bash / Windows cmd: `backup` / `restore` / `setup` / `remove-lpu` / sudoers verbs **MUST** fail closed. TTY keys board **MUST** print `[INFO] backup and restore not available for termux` (or `gitbash` / `windows-cmd`) and omit backup / restore / sudoers / request rows. This-login `auth-keys` **list** remains Type 0; `auth-keys add` **MUST** fail closed because a global backup is required. `auth-keys request` / `pending` / `approve` / `reject` / `interactive` **MUST** fail closed (inbound is POSIX Linux). Dual mention: `requirement-shell-config-backup` · `requirement-domain-key`.
 
 ### 2.5 Implementation Notes (this project)
 

@@ -49,7 +49,7 @@ Every CIAO-Lite shell CLI **MUST** expose a documented command set. Commands **M
 | **Type 0 – Normal user privilege – Self-management / CLI lifecycle** | Invoking user (no elevation required for user-owned install) | Manage the CLI binary and diagnostics | `version`, `about`, `help`, `version-check`, `self-update`, `self-uninstall` |
 | **Type 0 – Normal user privilege – Install CLI binary** | Invoking user (root → global path; non-root → user path) | First-time or explicit placement of the CLI | `install`; **non-interactive** empty argv **Type O install-ensure** — `requirement-shell-cli-zero-arguments.md` |
 | **Type 1 – Admin privilege – Host preparation** | Elevated (internal escalation when designed) | Passwordless `sudo key-cli backup` / `restore` into `/var/key-cli` after sudoer-adm; root `setup` | *Used for deposit and LPU create on POSIX Linux. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
-| **Type 2 – Dedicated system user privilege – App ops under system user** | Dedicated least-privilege system user | On-behalf backup / auth-keys as **key-adm** | *Used: `key-adm`. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
+| **Type 2 – Dedicated system user privilege – App ops under system user** | Dedicated least-privilege system user | On-behalf backup / auth-keys / auth-key-queue approve as **key-adm** | *Used: `key-adm`. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
 
 **Execution rules (core):**
 
@@ -156,7 +156,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | `help` | Type 0 | `app_help` | Full usage in human mode; short JSON note in JSON mode; Environment lists channel vars plus `BASHRC` — **not** `CHECKSUM` |
 | `backup` | Type 1 deposit (POSIX Linux) | `key_cmd_backup` | Archive `/home/<user>/.ssh` to `/var/key-cli/<user>/ssh-YYYYMMDD-N.tar.gz`. Dual mention: `requirement-shell-config-backup` · `requirement-shell-sudoer` · `requirement-domain-key`. Sample: `key-cli backup` |
 | `restore` | Type 1 deposit (POSIX Linux) | `key_cmd_restore` | List or extract a dated archive. Dual mention: `requirement-shell-config-backup` · `requirement-domain-key`. Sample: `key-cli restore list` |
-| `auth-keys` | Type 0 (self) / Type 2 on-behalf | `key_cmd_auth_keys` | List or add `authorized_keys`. Dual mention: `requirement-domain-key`. Sample: `key-cli auth-keys add ./laptop.pub` |
+| `auth-keys` | Type 0 (self list/add/request) / Type 2 on-behalf + approve | `key_cmd_auth_keys` | List or add `authorized_keys`; **request** queues JSON for B; key-adm **pending** / **approve** / **reject** / **interactive**. Dual mention: `requirement-domain-key`. Sample: `key-cli auth-keys request bob ./alice.pub` · `key-cli auth-keys approve authkey-20260916-bob-alice-add-1.json` |
 | `setup` | Type 1 | `key_cmd_setup` | Root: create key-adm + F6. Dual mention: `requirement-least-privilege-user`. Sample: `key-cli setup` |
 | `remove-lpu` | Type 1 | `key_cmd_remove_lpu` | Root: remove key-adm; keep archives. Dual mention: `requirement-least-privilege-user`. Sample: `key-cli remove-lpu --force` |
 | `menu` / `main` | Type 0 domain | `key_cmd_menu` | Numbered tree on a terminal. Front **1** keys / **2** on-behalf / **8** self-management / **9** Exit. Dual mention: `requirement-shell-cli-default-interaction` · `requirement-domain-key` |
@@ -180,7 +180,7 @@ Every routed verb is named **here** and on a topic-owner. Help/`app_help` is **n
 | `help` | `requirement-shell-cli-zero-arguments` · `requirement-shell-automatic-checksum` | `key-cli help` |
 | `version-check` / `self-update` | `requirement-shell-self-management` | `key-cli version-check` |
 | `self-uninstall` | `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` | `key-cli --force self-uninstall` |
-| `backup` / `restore` / `auth-keys` / `menu` | `requirement-domain-key` · `requirement-shell-config-backup` | `key-cli backup` · `key-cli restore list` · `key-cli auth-keys add ./laptop.pub` |
+| `backup` / `restore` / `auth-keys` / `menu` | `requirement-domain-key` · `requirement-shell-config-backup` | `key-cli backup` · `key-cli restore list` · `key-cli auth-keys add ./laptop.pub` · `key-cli auth-keys request bob ./alice.pub` |
 | `setup` / `remove-lpu` | `requirement-least-privilege-user` | `key-cli setup` |
 | `print-sudoers` / `print-sudoers-install-script` / `generate-sudoer-request` / `submit-sudoer-request` / `remove-project-sudoers` | `requirement-shell-sudoer` | `key-cli generate-sudoer-request` |
 | `main` | `requirement-domain-key` | alias of `menu` (help names the alias; type `menu`) |

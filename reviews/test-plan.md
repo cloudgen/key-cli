@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/key-cli` / `./key-cli`  
-**Product VERSION:** 2.0.3  
+**Product VERSION:** 2.1.0  
 **Last plan update:** 2026-09-16  
-**Last suite run:** PASS=295 FAIL=0 SKIP=0 (2026-09-16)
+**Last suite run:** PASS=331 FAIL=0 SKIP=0 (2026-09-16)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
@@ -56,7 +56,7 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-CLI-12 | storage isolation | test_cli | requirement-shell-cli-storage | **have** |
 | TP-CLI-19 | Git Bash: `/dev/shm` mkdir fail-soft → AppData Local Temp/`cache`; no storage ERROR | test_cli | requirement-shell-cli-storage | **have** |
 | TP-CLI-20 | static: resolver names Git Bash Temp; no mid-chain mkdir `out_die` | test_cli | requirement-shell-cli-storage · requirement-shell-script-coding | **have** |
-| TP-CLI-14 | empty argv interactive → front 1 keys / 8 self-management / 9 Exit; keys 11–14 | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments · requirement-domain-key | **have** |
+| TP-CLI-14 | empty argv interactive → front 1 keys / 8 self-management / 9 Exit; keys 11–15 | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-zero-arguments · requirement-domain-key | **have** |
 | TP-CLI-21 | TTY **82** / typed `version` run about; argv `version` stays thin JSON type | test_cli | requirement-shell-cli-default-interaction · requirement-shell-cli-interface · **INC-20260914-001** | **have** |
 
 ### TP-KEY (domain: SSH user-key backup/restore)
@@ -73,6 +73,15 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-KEY-08 | `menu --json` / non-TTY fail closed with named-command Next | test_cli | requirement-domain-key · requirement-shell-interactive-vs-noninteractive | **have** |
 | TP-KEY-09 | static: no `$()` of `prompt_ask` / `prompt_yes_no`; menu consumes `TTY` | test_cli | requirement-shell-cli-default-interaction · requirement-shell-script-coding | **have** |
 | TP-KEY-16 | TTY unknown menu token warns and redisplays | test_cli | requirement-domain-key · requirement-shell-interactive-vs-noninteractive | **have** |
+| TP-KEY-10 | `auth-keys request` writes JSON into inbound (A may name B) | test_cli | requirement-domain-key | **have** |
+| TP-KEY-11 | request with missing inbound fail-closed + Next setup | test_cli | requirement-domain-key | **have** |
+| TP-KEY-12 | request does not refuse A naming B | test_cli | requirement-domain-key | **have** |
+| TP-KEY-13 | `pending` lists basename when `KEY_ADM_USER` is this login | test_cli | requirement-domain-key · requirement-least-privilege-user | **have** |
+| TP-KEY-14 | `approve` appends B `authorized_keys` and moves to accepted | test_cli | requirement-domain-key | **have** |
+| TP-KEY-15 | `reject` moves to declined without appending | test_cli | requirement-domain-key | **have** |
+| TP-KEY-17 | Termux `auth-keys request` fail-closed | test_cli | requirement-domain-key · requirement-shell-termux-ish | **have** |
+| TP-KEY-18 | public-key line with `"` refused | test_cli | requirement-domain-key | **have** |
+| TP-KEY-20 | TTY keys **15** on POSIX; hidden on Termux | test_cli | requirement-domain-key · requirement-shell-cli-default-interaction | **have** |
 
 ### TP-CFG (archive deposit / restore / sudoers / auth-keys)
 
@@ -102,7 +111,7 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-CFG-23 | path-unsafe username fail closed | test_config_backup | requirement-domain-key | **have** |
 | TP-CFG-24 | Termux `print-sudoers` fail-closed | test_config_backup | requirement-shell-sudoer · requirement-shell-termux-ish | **have** |
 | TP-CFG-25 | Termux `setup` / `remove-lpu` fail-closed | test_config_backup | requirement-least-privilege-user · requirement-shell-termux-ish | **have** |
-| TP-CFG-26 | static key-adm F6 six product Cmnds; no ALL / tar | test_config_backup | requirement-least-privilege-user | **have** |
+| TP-CFG-26 | static key-adm F6 product Cmnds including auth-keys approve/pending; no ALL / tar | test_config_backup | requirement-least-privilege-user | **have** |
 | TP-CFG-27 | static F7 `userdel -r`; does not `rm -rf` the store | test_config_backup | requirement-least-privilege-user | **have** |
 
 ### TP-LC (install lifecycle) · TP-CSUM

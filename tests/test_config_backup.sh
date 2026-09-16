@@ -340,14 +340,19 @@ run_test_config_backup() {
     assert_contains "TP-CFG-25 Termux remove-lpu not available" "$_err" "not available for termux"
     ci_cleanup_env
 
-    # TP-CFG-26 static: key-adm F6 is six product Cmnds, not ALL / tar
+    # TP-CFG-26 static: key-adm F6 is product Cmnds (backup/restore/auth-keys add+queue), not ALL / tar
     _fn=$(sed -n '/^key_lpu_sudoers_fragment_text()/,/^key_sudoers_json_text_compact()/p' "${SCRIPT}")
     assert_contains "TP-CFG-26 F6 backup *" "${_fn}" 'backup *'
     assert_contains "TP-CFG-26 F6 restore *" "${_fn}" 'restore *'
     assert_contains "TP-CFG-26 F6 auth-keys add *" "${_fn}" 'auth-keys add *'
+    assert_contains "TP-CFG-26 F6 auth-keys pending" "${_fn}" 'auth-keys pending'
+    assert_contains "TP-CFG-26 F6 auth-keys approve *" "${_fn}" 'auth-keys approve *'
+    assert_contains "TP-CFG-26 F6 auth-keys reject *" "${_fn}" 'auth-keys reject *'
+    assert_contains "TP-CFG-26 F6 auth-keys interactive" "${_fn}" 'auth-keys interactive'
     assert_contains "TP-CFG-26 F6 --json backup *" "${_fn}" '--json backup *'
     assert_contains "TP-CFG-26 F6 --json restore *" "${_fn}" '--json restore *'
     assert_contains "TP-CFG-26 F6 --json auth-keys add *" "${_fn}" '--json auth-keys add *'
+    assert_contains "TP-CFG-26 F6 --json auth-keys approve *" "${_fn}" '--json auth-keys approve *'
     assert_not_contains "TP-CFG-26 F6 no ALL ALL" "${_fn}" 'ALL=(ALL) ALL'
     assert_not_contains "TP-CFG-26 F6 no /bin/tar" "${_fn}" '/bin/tar'
     unset _fn

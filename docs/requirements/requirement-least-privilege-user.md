@@ -12,7 +12,7 @@ Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This fi
 
 ### 1.1 Human-facing
 
-**In one sentence:** `key-adm` is the named badge that may run `sudo key-cli backup alice` and `sudo key-cli auth-keys add alice ./laptop.pub` — not “everything as root.”
+**In one sentence:** `key-adm` is the named badge that may run `sudo key-cli backup alice`, append another user’s `authorized_keys`, and approve queued public-key JSON — not “everything as root.”
 
 | Box | Meaning | Example |
 |-----|---------|---------|
@@ -61,9 +61,21 @@ Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This fi
 {{GLOBAL_BIN}}/key-cli backup *
 {{GLOBAL_BIN}}/key-cli restore *
 {{GLOBAL_BIN}}/key-cli auth-keys add *
+{{GLOBAL_BIN}}/key-cli auth-keys pending
+{{GLOBAL_BIN}}/key-cli auth-keys pending *
+{{GLOBAL_BIN}}/key-cli auth-keys approve *
+{{GLOBAL_BIN}}/key-cli auth-keys reject *
+{{GLOBAL_BIN}}/key-cli auth-keys interactive
+{{GLOBAL_BIN}}/key-cli auth-keys interactive *
 {{GLOBAL_BIN}}/key-cli --json backup *
 {{GLOBAL_BIN}}/key-cli --json restore *
 {{GLOBAL_BIN}}/key-cli --json auth-keys add *
+{{GLOBAL_BIN}}/key-cli --json auth-keys pending
+{{GLOBAL_BIN}}/key-cli --json auth-keys pending *
+{{GLOBAL_BIN}}/key-cli --json auth-keys approve *
+{{GLOBAL_BIN}}/key-cli --json auth-keys reject *
+{{GLOBAL_BIN}}/key-cli --json auth-keys interactive
+{{GLOBAL_BIN}}/key-cli --json auth-keys interactive *
 ```
 
 **MUST NOT** allowlist `tar`, `cp`, `mkdir`, `chmod`, `chown`, shells, or `ALL`.
@@ -87,7 +99,7 @@ key-cli remove-lpu --force
 
 ### 2.5 Why This Requirement Exists (Direct CIAO Alignment)
 
-- **CIAO Principle 10 – Least privilege**: one operator, six Cmnds.  
+- **CIAO Principle 10 – Least privilege**: one operator, product Cmnds only (backup/restore plus auth-keys add/pending/approve/reject/interactive and `--json` twins).  
 - **CIAO Principle 9 – Type 0/1/2**: Type 1 creates; Type 2 is day-to-day as key-adm via sudo of the product command.
 
 ## Under command line for normal user only

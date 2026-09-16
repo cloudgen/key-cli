@@ -8,7 +8,7 @@
 |----------|-------|------|--------|------|---------|
 | requirement-class-software-dev | Software-development class law + residual stack (posix-sh, no package tool) | class | Active | `requirement-class-software-dev.md` | 2026-09-09 |
 | requirement-shell-automatic-checksum | Automatic companion-digest integrity (transparent link/value/result; CHECKSUM not help/about) | shell | Active | `requirement-shell-automatic-checksum.md` | 2026-09-06 |
-| requirement-shell-cli-default-interaction | TTY numbered main menu (front 1/2/8, parent-prefix children, 0 Back, bold short / italic long; **82** runs about) | shell | Active | `requirement-shell-cli-default-interaction.md` | 2026-09-14 |
+| requirement-shell-cli-default-interaction | TTY numbered main menu (front 1/2/8, parent-prefix children, 0 Back, bold short / italic long; **82** runs about; keys **15** request; on-behalf **24**/**25**) | shell | Active | `requirement-shell-cli-default-interaction.md` | 2026-09-16 |
 | requirement-shell-cli-interface | Shell CLI interface (commands, flags, dispatch, modes; `BASHRC`; `rc-test` dual mention; domain `backup` / `restore` / `auth-keys` / `setup`; menu dual mention; TTY unknown choice redisplay; TTY **82** about) | shell | Active | `requirement-shell-cli-interface.md` | 2026-09-16 |
 | requirement-shell-cli-storage | Scratch/cache storage resolve (per-user isolation, mkdir fail-soft, Git Bash AppData Temp) | shell | Active | `requirement-shell-cli-storage.md` | 2026-09-11 |
 | requirement-shell-cli-zero-arguments | Empty argv: TTY menu / non-TTY Type O install-ensure | shell | Active | `requirement-shell-cli-zero-arguments.md` | 2026-09-09 |
@@ -26,8 +26,8 @@
 | requirement-sshd-config-backup | Points at `requirement-shell-config-backup` (product store names) | backup | Active | `requirement-sshd-config-backup.md` | 2026-09-14 |
 | requirement-sudoer-json-file | Points at `requirement-shell-sudoer` (JSON slice) | privilege | Active | `requirement-sudoer-json-file.md` | 2026-09-12 |
 | requirement-three-layer-privilege-model | Type 0/1/2 map; Type 2 is key-adm; sudoer verbs point at `requirement-shell-sudoer` | privilege | Active | `requirement-three-layer-privilege-model.md` | 2026-09-14 |
-| requirement-least-privilege-user | key-adm F1–F7, `setup` / `remove-lpu` | privilege | Active | `requirement-least-privilege-user.md` | 2026-09-14 |
-| requirement-domain-key | SSH user-key domain (`backup` / `restore` / `auth-keys` / `setup` / menu; on-behalf as key-adm; no OpenSSH client/server) | domain | Active | `requirement-domain-key.md` | 2026-09-14 |
+| requirement-least-privilege-user | key-adm F1–F7, `setup` / `remove-lpu`; F6 includes auth-key approve/pending | privilege | Active | `requirement-least-privilege-user.md` | 2026-09-16 |
+| requirement-domain-key | SSH user-key domain (`backup` / `restore` / `auth-keys` including request/approve / `setup` / menu; on-behalf as key-adm; no OpenSSH client/server) | domain | Active | `requirement-domain-key.md` | 2026-09-16 |
 | requirement-domain-sshd | Superseded by `requirement-domain-key` | domain | Superseded | `requirement-domain-sshd.md` | 2026-09-14 |
 
 **Rules for agents:**

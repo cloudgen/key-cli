@@ -54,10 +54,10 @@ APP_NAME="key-cli"
 : "${APP_NAME:=key-cli}"
 : "${APP_DESC:=Backup and restore SSH user keys}"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
-: "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, and (as key-adm) do the same on behalf of other users.}"
+: "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, queue a public key for another account for key-adm to approve, and (as key-adm) do the same on behalf of other users.}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="2.0.3"
-: "${VERSION:=2.0.3}"
+VERSION="2.1.0"
+: "${VERSION:=2.1.0}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -3099,7 +3099,7 @@ key_lpu_sudoers_fragment_text() {
     _global_path="${GLOBAL_BIN}/${APP_NAME}"
     _installed=$(key_lpu_sudoers_path)
     cat <<EOF
-# Purpose: Allow ${_user} to backup/restore other users' .ssh and append authorized_keys as root.
+# Purpose: Allow ${_user} to backup/restore other users' .ssh, append authorized_keys, and review auth-key requests as root.
 # ${APP_NAME} — key-adm F6 (review before install)
 # Target user: ${_user}
 # Install dest: ${_installed} (mode 0440 root:root)
@@ -3107,9 +3107,21 @@ key_lpu_sudoers_fragment_text() {
 ${_user} ALL=(root) NOPASSWD: ${_global_path} backup *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} restore *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys add *
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys pending
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys pending *
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys approve *
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys reject *
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys interactive
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys interactive *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json backup *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json restore *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys add *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys pending
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys pending *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys approve *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys reject *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys interactive
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys interactive *
 EOF
     unset _user _global_path _installed
 }
@@ -3720,6 +3732,403 @@ key_auth_keys_path() {
     unset _u
 }
 
+key_auth_key_inbound_dir() {
+    printf '%s' "$(key_cli_root)/auth-key-request"
+}
+
+key_auth_key_accepted_dir() {
+    printf '%s' "$(key_cli_root)/auth-key-accepted"
+}
+
+key_auth_key_declined_dir() {
+    printf '%s' "$(key_cli_root)/auth-key-declined"
+}
+
+key_refuse_auth_key_queue_on_nuser() {
+    : "${APP_NAME:=key-cli}"
+    _lab=$(key_host_normal_user_only_label)
+    if [ -z "${_lab}" ]; then
+        unset _lab
+        return 0
+    fi
+    out_die "auth-key requests are not available for ${_lab}. Next: use a POSIX Linux host."
+}
+
+key_auth_key_json_string_field() {
+    local _ak_file _ak_name _ak_val
+    _ak_file="${1-}"
+    _ak_name="${2-}"
+    _ak_val=""
+    if [ -z "${_ak_file}" ] || [ -z "${_ak_name}" ] || [ ! -f "${_ak_file}" ]; then
+        unset _ak_file _ak_name _ak_val
+        return 1
+    fi
+    _ak_val=$(sed -n "s/.*\"${_ak_name}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "${_ak_file}" | head -n 1)
+    printf '%s' "${_ak_val}"
+    unset _ak_file _ak_name _ak_val
+}
+
+key_auth_key_pubkey_from_file() {
+    local _ak_file _ak_key
+    _ak_file="${1-}"
+    _ak_key=""
+    if [ -z "${_ak_file}" ] || [ ! -f "${_ak_file}" ] || [ ! -r "${_ak_file}" ]; then
+        unset _ak_file _ak_key
+        return 1
+    fi
+    _ak_key=$(grep -E '^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp|sk-ssh-)' "${_ak_file}" | head -n 1 || true)
+    _ak_key=$(printf '%s' "${_ak_key}" | tr -d '\r')
+    case "${_ak_key}" in
+        *\"*|*'\\'*|"")
+            unset _ak_file _ak_key
+            return 1
+            ;;
+    esac
+    printf '%s' "${_ak_key}"
+    unset _ak_file _ak_key
+    return 0
+}
+
+key_auth_key_valid_basename() {
+    local _ak_b
+    _ak_b="${1-}"
+    case "${_ak_b}" in
+        ""|*/*|*..*|*[[:space:]]*)
+            unset _ak_b
+            return 1
+            ;;
+    esac
+    case "${_ak_b}" in
+        authkey-????????-*-*-add-*.json)
+            unset _ak_b
+            return 0
+            ;;
+    esac
+    unset _ak_b
+    return 1
+}
+
+key_auth_key_next_path() {
+    local _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+    _ak_subject="${1-}"
+    _ak_submitter="${2-}"
+    _ak_in=$(key_auth_key_inbound_dir)
+    _ak_day=$(date +%Y%m%d)
+    _ak_n=1
+    _ak_path=""
+    while :; do
+        _ak_path="${_ak_in}/authkey-${_ak_day}-${_ak_subject}-${_ak_submitter}-add-${_ak_n}.json"
+        if [ ! -e "${_ak_path}" ]; then
+            printf '%s' "${_ak_path}"
+            unset _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+            return 0
+        fi
+        _ak_n=$((_ak_n + 1))
+        if [ "${_ak_n}" -gt 9999 ]; then
+            unset _ak_subject _ak_submitter _ak_in _ak_day _ak_n _ak_path
+            return 1
+        fi
+    done
+}
+
+key_auth_key_write_json() {
+    local _ak_path _ak_subject _ak_submitter _ak_key
+    _ak_path="${1-}"
+    _ak_subject="${2-}"
+    _ak_submitter="${3-}"
+    _ak_key="${4-}"
+    : "${APP_NAME:=key-cli}"
+    printf '%s\n' "{\"schema_version\":1,\"purpose\":\"Allow ${_ak_submitter} to SSH as ${_ak_subject}.\",\"username\":\"${_ak_subject}\",\"submitter\":\"${_ak_submitter}\",\"service\":\"${APP_NAME}\",\"action\":\"add\",\"public_key\":\"${_ak_key}\"}" >"${_ak_path}" || return 1
+    chmod 0644 "${_ak_path}" 2>/dev/null || true
+    unset _ak_path _ak_subject _ak_submitter _ak_key
+    return 0
+}
+
+key_auth_key_review_elev() {
+    : "${APP_NAME:=key-cli}"
+    local _ak_sub _ak_in
+    _ak_sub="${1-}"
+    shift
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        unset _ak_sub
+        return 0
+    fi
+    if ! key_can_on_behalf; then
+        out_die "Cannot review auth-key requests. Next: run as $(key_adm_user) (or root)."
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    if key_dest_needs_elev "${_ak_in}"; then
+        key_elev_reexec auth-keys "${_ak_sub}" "$@"
+        unset _ak_sub _ak_in
+        return 2
+    fi
+    unset _ak_sub _ak_in
+    return 0
+}
+
+key_cmd_auth_keys_request() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${TTY:=0}"
+    local _ak_subject _ak_file _ak_self _ak_key _ak_in _ak_path
+    key_refuse_auth_key_queue_on_nuser
+    _ak_subject="${1-}"
+    _ak_file="${2-}"
+    _ak_self=$(key_invoking_login)
+    if [ -z "${_ak_subject}" ]; then
+        if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+            out_msg_n "username to receive the public key: "
+            read -r _ak_subject || true
+        fi
+    fi
+    if [ -z "${_ak_file}" ]; then
+        if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+            out_msg_n "public-key file: "
+            read -r _ak_file || true
+        fi
+    fi
+    if [ -z "${_ak_subject}" ] || [ -z "${_ak_file}" ]; then
+        out_die "auth-keys request needs a username and a public-key file. Example: ${APP_NAME} auth-keys request bob ./id_ed25519.pub"
+    fi
+    if ! key_valid_username "${_ak_subject}"; then
+        out_die "Invalid username '${_ak_subject}'. Use a login name with letters, digits, dot, underscore, or hyphen."
+    fi
+    if [ ! -f "${_ak_file}" ] || [ ! -r "${_ak_file}" ]; then
+        out_die "Cannot read public-key file: ${_ak_file}"
+    fi
+    _ak_key=$(key_auth_key_pubkey_from_file "${_ak_file}") || _ak_key=""
+    if [ -z "${_ak_key}" ]; then
+        out_die "No SSH public key line found in ${_ak_file} (or the line contains a quote / backslash)."
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    if [ ! -d "${_ak_in}" ]; then
+        out_die "Auth-key request inbound is missing (${_ak_in}). Next: sudo ${APP_NAME} setup"
+    fi
+    if [ ! -w "${_ak_in}" ]; then
+        out_die "Auth-key request inbound is not writable: ${_ak_in}. Next: sudo ${APP_NAME} setup"
+    fi
+    _ak_path=$(key_auth_key_next_path "${_ak_subject}" "${_ak_self}") || out_die "Cannot allocate an auth-key request name."
+    key_auth_key_write_json "${_ak_path}" "${_ak_subject}" "${_ak_self}" "${_ak_key}" \
+        || out_die "Cannot write ${_ak_path}"
+    out_success "Queued auth-key request $(basename -- "${_ak_path}")"
+    out_info "Subject: ${_ak_subject}  Submitter: ${_ak_self}"
+    out_info "key-adm reviews with: ${APP_NAME} auth-keys pending"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "auth-keys-request" "queued" \
+            "path" "${_ak_path}" \
+            "username" "${_ak_subject}" \
+            "submitter" "${_ak_self}"
+    fi
+    unset _ak_subject _ak_file _ak_self _ak_key _ak_in _ak_path
+    return 0
+}
+
+key_cmd_auth_keys_pending() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    local _ak_el _ak_in _ak_count _ak_names _ak_f _ak_b _ak_u _ak_s
+    key_refuse_auth_key_queue_on_nuser
+    key_auth_key_review_elev pending
+    _ak_el=$?
+    if [ "${_ak_el}" -eq 2 ]; then
+        unset _ak_el
+        return 0
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    if [ ! -d "${_ak_in}" ]; then
+        out_die "Auth-key request inbound is missing (${_ak_in}). Next: sudo ${APP_NAME} setup"
+    fi
+    _ak_count=0
+    _ak_names=""
+    for _ak_f in "${_ak_in}"/authkey-*.json; do
+        [ -f "${_ak_f}" ] || continue
+        _ak_b=$(basename -- "${_ak_f}")
+        _ak_count=$((_ak_count + 1))
+        if [ -z "${_ak_names}" ]; then
+            _ak_names="${_ak_b}"
+        else
+            _ak_names="${_ak_names} ${_ak_b}"
+        fi
+        if [ "${JSON}" -eq 0 ]; then
+            _ak_u=$(key_auth_key_json_string_field "${_ak_f}" "username")
+            _ak_s=$(key_auth_key_json_string_field "${_ak_f}" "submitter")
+            out_plain "${_ak_b}  subject=${_ak_u}  submitter=${_ak_s}"
+        fi
+    done
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "auth-keys-pending" "" \
+            "inbound" "${_ak_in}" \
+            "count" "${_ak_count}" \
+            "names" "${_ak_names}"
+    else
+        if [ "${_ak_count}" -eq 0 ]; then
+            out_info "No pending auth-key requests in ${_ak_in}."
+        else
+            out_info "Pending auth-key requests: ${_ak_count}"
+        fi
+    fi
+    unset _ak_el _ak_in _ak_count _ak_names _ak_f _ak_b _ak_u _ak_s
+    return 0
+}
+
+key_cmd_auth_keys_approve() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    local _ak_base _ak_el _ak_in _ak_acc _ak_src _ak_ver _ak_svc _ak_act _ak_subject _ak_submitter _ak_key _ak_tmp _ak_save_json _ak_save_quiet
+    key_refuse_auth_key_queue_on_nuser
+    _ak_base="${1-}"
+    if [ -z "${_ak_base}" ]; then
+        out_die "auth-keys approve needs a request basename. Example: ${APP_NAME} auth-keys approve authkey-20260916-bob-alice-add-1.json"
+    fi
+    if ! key_auth_key_valid_basename "${_ak_base}"; then
+        out_die "Invalid auth-key request name '${_ak_base}'. Use the inbound basename only."
+    fi
+    key_auth_key_review_elev approve "${_ak_base}"
+    _ak_el=$?
+    if [ "${_ak_el}" -eq 2 ]; then
+        unset _ak_el _ak_base
+        return 0
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    _ak_acc=$(key_auth_key_accepted_dir)
+    _ak_src="${_ak_in}/${_ak_base}"
+    if [ ! -f "${_ak_src}" ]; then
+        out_die "Auth-key request not in inbound: ${_ak_base}"
+    fi
+    _ak_ver=$(sed -n 's/.*"schema_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${_ak_src}" | head -n 1)
+    _ak_svc=$(key_auth_key_json_string_field "${_ak_src}" "service")
+    _ak_act=$(key_auth_key_json_string_field "${_ak_src}" "action")
+    _ak_subject=$(key_auth_key_json_string_field "${_ak_src}" "username")
+    _ak_submitter=$(key_auth_key_json_string_field "${_ak_src}" "submitter")
+    _ak_key=$(key_auth_key_json_string_field "${_ak_src}" "public_key")
+    if [ "${_ak_ver}" != "1" ] || [ "${_ak_svc}" != "${APP_NAME}" ] || [ "${_ak_act}" != "add" ]; then
+        out_die "Auth-key request ${_ak_base} failed re-validation (schema/service/action)."
+    fi
+    if ! key_valid_username "${_ak_subject}" || ! key_valid_username "${_ak_submitter}"; then
+        out_die "Auth-key request ${_ak_base} failed re-validation (username/submitter)."
+    fi
+    case "${_ak_key}" in
+        ssh-rsa\ *|ssh-ed25519\ *|ecdsa-sha2-nistp*\ *|sk-ssh-*)
+            ;;
+        *)
+            out_die "Auth-key request ${_ak_base} failed re-validation (public_key)."
+            ;;
+    esac
+    case "${_ak_key}" in
+        *\"*|*'\\'*)
+            out_die "Auth-key request ${_ak_base} failed re-validation (public_key quote)."
+            ;;
+    esac
+    if [ ! -d "${_ak_acc}" ]; then
+        out_die "Auth-key accepted folder is missing (${_ak_acc}). Next: sudo ${APP_NAME} setup"
+    fi
+    _ak_tmp=$(mktemp -t "${APP_NAME}.authkey.XXXXXX") || out_die "Could not stage the public key."
+    printf '%s\n' "${_ak_key}" >"${_ak_tmp}" || { rm -f "${_ak_tmp}"; out_die "Cannot write staged public key."; }
+    _ak_save_json="${JSON}"
+    _ak_save_quiet="${QUIET}"
+    JSON=0
+    QUIET=1
+    key_cmd_auth_keys add "${_ak_subject}" "${_ak_tmp}"
+    JSON="${_ak_save_json}"
+    QUIET="${_ak_save_quiet}"
+    rm -f "${_ak_tmp}"
+    mv "${_ak_src}" "${_ak_acc}/${_ak_base}" || out_die "Appended the key but could not move ${_ak_base} to accepted."
+    out_success "Approved ${_ak_base}: appended public key for ${_ak_subject} (submitter ${_ak_submitter})."
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "auth-keys-approve" "accepted" \
+            "basename" "${_ak_base}" \
+            "username" "${_ak_subject}" \
+            "submitter" "${_ak_submitter}" \
+            "accepted" "${_ak_acc}/${_ak_base}"
+    fi
+    unset _ak_base _ak_el _ak_in _ak_acc _ak_src _ak_ver _ak_svc _ak_act _ak_subject _ak_submitter _ak_key _ak_tmp _ak_save_json _ak_save_quiet
+    return 0
+}
+
+key_cmd_auth_keys_reject() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    local _ak_base _ak_el _ak_in _ak_dec _ak_src
+    key_refuse_auth_key_queue_on_nuser
+    _ak_base="${1-}"
+    if [ -z "${_ak_base}" ]; then
+        out_die "auth-keys reject needs a request basename. Example: ${APP_NAME} auth-keys reject authkey-20260916-bob-alice-add-1.json"
+    fi
+    if ! key_auth_key_valid_basename "${_ak_base}"; then
+        out_die "Invalid auth-key request name '${_ak_base}'. Use the inbound basename only."
+    fi
+    key_auth_key_review_elev reject "${_ak_base}"
+    _ak_el=$?
+    if [ "${_ak_el}" -eq 2 ]; then
+        unset _ak_el _ak_base
+        return 0
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    _ak_dec=$(key_auth_key_declined_dir)
+    _ak_src="${_ak_in}/${_ak_base}"
+    if [ ! -f "${_ak_src}" ]; then
+        out_die "Auth-key request not in inbound: ${_ak_base}"
+    fi
+    if [ ! -d "${_ak_dec}" ]; then
+        out_die "Auth-key declined folder is missing (${_ak_dec}). Next: sudo ${APP_NAME} setup"
+    fi
+    mv "${_ak_src}" "${_ak_dec}/${_ak_base}" || out_die "Cannot move ${_ak_base} to declined."
+    out_success "Rejected ${_ak_base}."
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "auth-keys-reject" "declined" \
+            "basename" "${_ak_base}" \
+            "declined" "${_ak_dec}/${_ak_base}"
+    fi
+    unset _ak_base _ak_el _ak_in _ak_dec _ak_src
+    return 0
+}
+
+key_cmd_auth_keys_interactive() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${TTY:=0}"
+    local _ak_el _ak_in _ak_any _ak_f _ak_b _ak_u _ak_s _ak_k
+    key_refuse_auth_key_queue_on_nuser
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
+        out_die "auth-keys interactive needs a terminal. Next: ${APP_NAME} auth-keys pending, then ${APP_NAME} auth-keys approve <basename>."
+    fi
+    key_auth_key_review_elev interactive
+    _ak_el=$?
+    if [ "${_ak_el}" -eq 2 ]; then
+        unset _ak_el
+        return 0
+    fi
+    _ak_in=$(key_auth_key_inbound_dir)
+    if [ ! -d "${_ak_in}" ]; then
+        out_die "Auth-key request inbound is missing (${_ak_in}). Next: sudo ${APP_NAME} setup"
+    fi
+    _ak_any=0
+    for _ak_f in "${_ak_in}"/authkey-*.json; do
+        [ -f "${_ak_f}" ] || continue
+        _ak_any=1
+        _ak_b=$(basename -- "${_ak_f}")
+        _ak_u=$(key_auth_key_json_string_field "${_ak_f}" "username")
+        _ak_s=$(key_auth_key_json_string_field "${_ak_f}" "submitter")
+        _ak_k=$(key_auth_key_json_string_field "${_ak_f}" "public_key")
+        out_info "Request ${_ak_b}"
+        out_plain "  subject=${_ak_u}  submitter=${_ak_s}"
+        out_plain "  public_key=${_ak_k}"
+        if prompt_yes_no "Approve this request"; then
+            key_cmd_auth_keys_approve "${_ak_b}"
+        else
+            key_cmd_auth_keys_reject "${_ak_b}"
+        fi
+    done
+    if [ "${_ak_any}" -eq 0 ]; then
+        out_info "No pending auth-key requests in ${_ak_in}."
+    fi
+    unset _ak_el _ak_in _ak_any _ak_f _ak_b _ak_u _ak_s _ak_k
+    return 0
+}
+
 key_cmd_auth_keys() {
     : "${APP_NAME:=key-cli}"
     : "${JSON:=0}"
@@ -3785,9 +4194,12 @@ key_cmd_auth_keys() {
                 out_die "Cannot read public-key file: ${_file}"
             fi
             if [ "${_subject}" != "${_self}" ] && [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
-                key_elev_reexec auth-keys add "${_subject}" "${_file}"
-                unset _sub _a2 _a3 _self _subject _file
-                return 0
+                _dir=$(key_user_ssh_dir "${_subject}")
+                if key_dest_needs_elev "${_dir}"; then
+                    key_elev_reexec auth-keys add "${_subject}" "${_file}"
+                    unset _sub _a2 _a3 _self _subject _file _dir
+                    return 0
+                fi
             fi
             _dir=$(key_user_ssh_dir "${_subject}")
             _path=$(key_auth_keys_path "${_subject}")
@@ -3822,8 +4234,33 @@ key_cmd_auth_keys() {
             unset _sub _a2 _a3 _self _subject _file _dir _path _key
             return 0
             ;;
+        request)
+            key_cmd_auth_keys_request "${_a2}" "${_a3}"
+            unset _sub _a2 _a3 _self _subject _file
+            return 0
+            ;;
+        pending)
+            key_cmd_auth_keys_pending
+            unset _sub _a2 _a3 _self _subject _file
+            return 0
+            ;;
+        approve)
+            key_cmd_auth_keys_approve "${_a2}"
+            unset _sub _a2 _a3 _self _subject _file
+            return 0
+            ;;
+        reject)
+            key_cmd_auth_keys_reject "${_a2}"
+            unset _sub _a2 _a3 _self _subject _file
+            return 0
+            ;;
+        interactive)
+            key_cmd_auth_keys_interactive
+            unset _sub _a2 _a3 _self _subject _file
+            return 0
+            ;;
         *)
-            out_die "Unknown auth-keys action '${_sub}'. Use list or add <pubkey-file> (optional user for $(key_adm_user) on-behalf)."
+            out_die "Unknown auth-keys action '${_sub}'. Use list, add [user] <pubkey-file>, request [user] <pubkey-file>, pending, approve <basename>, reject <basename>, or interactive."
             ;;
     esac
 }
@@ -4149,6 +4586,11 @@ key_cmd_setup() {
     mkdir -p "${_root}" || out_die "Cannot create ${_root}."
     chown root:root "${_root}" 2>/dev/null || true
     chmod 0755 "${_root}" 2>/dev/null || true
+    mkdir -p "${_root}/auth-key-request" "${_root}/auth-key-accepted" "${_root}/auth-key-declined" \
+        || out_die "Cannot create auth-key queue directories under ${_root}."
+    chown root:root "${_root}/auth-key-request" "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
+    chmod 1733 "${_root}/auth-key-request" 2>/dev/null || true
+    chmod 0750 "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
     _f6=$(key_lpu_sudoers_path)
     _f6dir=$(dirname -- "${_f6}")
     mkdir -p "${_f6dir}" || out_die "Cannot create ${_f6dir}."
@@ -4172,7 +4614,7 @@ key_cmd_setup() {
     else
         out_warn "No ${_incdir}; F6 is at ${_f6}. Next: add #include ${_f6} to sudoers as root."
     fi
-    out_success "setup complete: ${KEY_ADM_USER} can sudo ${APP_NAME} backup/restore/auth-keys add on behalf of other users."
+    out_success "setup complete: ${KEY_ADM_USER} can sudo ${APP_NAME} backup/restore/auth-keys add and review auth-key requests on behalf of other users."
     if [ "${JSON}" -eq 1 ]; then
         out_json "setup" "ok" \
             "lpu" "${KEY_ADM_USER}" \
@@ -4246,6 +4688,9 @@ key_menu_typed_leaf() {
         backup) key_cmd_backup; return 0 ;;
         restore) key_cmd_restore; return 0 ;;
         auth-keys) key_cmd_auth_keys list; return 0 ;;
+        request) key_cmd_auth_keys request; return 0 ;;
+        pending) key_cmd_auth_keys pending; return 0 ;;
+        interactive) key_cmd_auth_keys interactive; return 0 ;;
         sudoers) key_cmd_sudoers_menu; return 0 ;;
         generate-sudoer-request) key_cmd_generate_sudoer_request; return 0 ;;
         submit-sudoer-request) key_cmd_submit_sudoer_request; return 0 ;;
@@ -4281,6 +4726,7 @@ key_cmd_menu_keys() {
         out_menu_choice "13" "auth-keys" "this login authorized_keys (add takes a global backup first)"
         if [ "${_show_elev}" -eq 1 ]; then
             out_menu_choice "14" "sudoers" "grant and drafts for passwordless sudo"
+            out_menu_choice "15" "request" "queue a public key so key-adm can let you log in as another account"
         fi
         out_plain "0. Back"
         out_msg_n "Choose a number, or type the command name: "
@@ -4307,6 +4753,14 @@ key_cmd_menu_keys() {
                 continue
                 ;;
             13|auth-keys) key_cmd_auth_keys; continue ;;
+            15|request)
+                if [ "${_show_elev}" -eq 1 ]; then
+                    key_cmd_auth_keys request
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
             14)
                 if [ "${_show_elev}" -eq 1 ]; then
                     key_cmd_sudoers_menu
@@ -4348,6 +4802,8 @@ key_cmd_menu_on_behalf() {
         out_menu_choice "21" "backup" "archive another user's ~/.ssh using sudo"
         out_menu_choice "22" "restore" "restore another user's ~/.ssh using sudo"
         out_menu_choice "23" "auth-keys" "append authorized_keys for another user (global backup first, then sudo)"
+        out_menu_choice "24" "pending" "list waiting public-key requests"
+        out_menu_choice "25" "interactive" "approve or reject each waiting request (yes/no)"
         out_plain "0. Back"
         out_msg_n "Choose a number, or type the command name: "
         _choice=""
@@ -4387,6 +4843,14 @@ key_cmd_menu_on_behalf() {
                     key_cmd_auth_keys add "${_u}" "${_f}"
                 fi
                 unset _u _f
+                continue
+                ;;
+            24|pending)
+                key_cmd_auth_keys pending
+                continue
+                ;;
+            25|interactive)
+                key_cmd_auth_keys interactive
                 continue
                 ;;
             0|q|"")
@@ -4622,7 +5086,7 @@ app_version() {
 
 app_help() {
     : "${SHORT_DESCRIPTION:=${APP_DESC:-Backup and restore SSH user keys}}"
-    : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli, restore it, and (as key-adm) do the same on behalf of other users.}"
+    : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli, restore it, queue a public key for another account for key-adm to approve, and (as key-adm) do the same on behalf of other users.}"
     if [ "${JSON}" -eq 1 ]; then
         out_json "success" "Help text available in human-readable mode. Run without --json." \
             "command" "help" \
@@ -4651,7 +5115,8 @@ app_help() {
     out_plain "  backup [user]        Archive /home/<user>/.ssh to /var/${APP_NAME}/<user>/ssh-YYYYMMDD-N.tar.gz (sudo; root:root)"
     out_plain "  restore list [user]  List dated archives for that user"
     out_plain "  restore [user] [archive]  Extract an archive back into /home/<user>/.ssh"
-    out_plain "  auth-keys [list|add [user] <file>]  List or add authorized_keys; add always takes a global ~/.ssh backup first"
+    out_plain "  auth-keys [list|add [user] <file>|request [user] <file>|pending|approve <file>|reject <file>|interactive]"
+    out_plain "                      List or add authorized_keys; request queues a public key for another account; key-adm pending/approve/reject"
     out_plain "  setup                Root: create key-adm and F6 sudoers"
     out_plain "  remove-lpu           Root: remove key-adm (keeps /var/${APP_NAME} archives)"
     out_plain "  print-sudoers        Emit project-sudoers-file (draft) for admin install"

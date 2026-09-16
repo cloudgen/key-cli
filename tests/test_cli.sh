@@ -42,6 +42,7 @@ run_test_cli() {
     assert_contains "TP-CLI-04 help backup" "$_out" "backup [user]"
     assert_contains "TP-CLI-04 help restore" "$_out" "restore"
     assert_contains "TP-CLI-04 help auth-keys" "$_out" "auth-keys"
+    assert_contains "TP-CLI-04 help auth-keys request" "$_out" "request [user]"
     assert_contains "TP-CLI-04 help setup" "$_out" "setup"
     assert_contains "TP-KEY-02 help remove-lpu" "$_out" "remove-lpu"
     assert_contains "TP-CLI-04 help print-sudoers" "$_out" "print-sudoers"
@@ -95,6 +96,7 @@ run_test_cli() {
     assert_contains "TP-CLI-14 keys restore row 12" "$_out" "12."
     assert_contains "TP-CLI-14 keys auth-keys row 13" "$_out" "13."
     assert_contains "TP-CLI-14 keys sudoers row 14" "$_out" "14."
+    assert_contains "TP-CLI-14 keys request row 15" "$_out" "15."
     assert_contains "TP-CLI-14 keys Back 0" "$_out" "0. Back"
     assert_file_missing "TP-CLI-14 interactive empty argv does not install" "${CI_USER_BIN}/${APP_NAME}"
     ci_cleanup_env
@@ -265,4 +267,136 @@ run_test_cli() {
     assert_not_contains "TP-KEY-09 no capture of prompt_yes_no" "${_src}" '=$(prompt_yes_no'
     assert_contains "TP-KEY-09 menu reads TTY SSOT" "${_src}" 'if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then'
     unset _src
+
+    # TP-KEY-10 request writes JSON into inbound (A may name B)
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}" "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" 2>&1)
+    _ec=$?
+    assert_eq "TP-KEY-10 request exit 0" 0 "$_ec"
+    assert_contains "TP-KEY-10 queued" "$_out" "Queued auth-key request"
+    _day=$(date +%Y%m%d)
+    _req="${_store}/auth-key-request/authkey-${_day}-bob-${_user}-add-1.json"
+    assert_file_exists "TP-KEY-10 inbound json" "${_req}"
+    assert_contains "TP-KEY-10 json username bob" "$(cat "${_req}")" '"username":"bob"'
+    assert_contains "TP-KEY-10 json submitter" "$(cat "${_req}")" "\"submitter\":\"${_user}\""
+    assert_contains "TP-KEY-10 json public_key" "$(cat "${_req}")" "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop"
+    ci_cleanup_env
+
+    # TP-KEY-11 missing inbound fail-closed + Next setup
+    ci_isolated_env
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    _err=$(HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-KEY-11 missing inbound exit 1" 1 "$_ec"
+    assert_contains "TP-KEY-11 Next setup" "$_err" "setup"
+    ci_cleanup_env
+
+    # TP-KEY-12 request does not refuse A naming B (not dest self-scope)
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}/auth-key-request"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    _err=$(HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-KEY-12 A-for-B request exit 0" 0 "$_ec"
+    assert_not_contains "TP-KEY-12 no on-behalf refuse" "$_err" "Cannot act on behalf"
+    ci_cleanup_env
+
+    # TP-KEY-13 pending lists basename when this login is KEY_ADM_USER
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    _out=$(HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" sh "${SCRIPT}" auth-keys pending 2>&1)
+    _ec=$?
+    assert_eq "TP-KEY-13 pending exit 0" 0 "$_ec"
+    assert_contains "TP-KEY-13 pending names basename" "$_out" "${_base}"
+    ci_cleanup_env
+
+    # TP-KEY-14 approve appends B authorized_keys and moves to accepted
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/bob/.ssh" "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 700 "${_homes}/bob/.ssh"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" sh "${SCRIPT}" auth-keys approve "${_base}" 2>&1)
+    _ec=$?
+    assert_eq "TP-KEY-14 approve exit 0" 0 "$_ec"
+    assert_contains "TP-KEY-14 approved" "$_out" "Approved"
+    assert_file_missing "TP-KEY-14 inbound moved" "${_store}/auth-key-request/${_base}"
+    assert_file_exists "TP-KEY-14 accepted" "${_store}/auth-key-accepted/${_base}"
+    assert_file_exists "TP-KEY-14 bob authorized_keys" "${_homes}/bob/.ssh/authorized_keys"
+    assert_contains "TP-KEY-14 key appended" "$(cat "${_homes}/bob/.ssh/authorized_keys")" "alice-laptop"
+    ci_cleanup_env
+
+    # TP-KEY-15 reject moves to declined without appending
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/bob/.ssh" "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined"
+    chmod 700 "${_homes}/bob/.ssh"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    _base="authkey-${_day}-bob-${_user}-add-1.json"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" KEY_ADM_USER="${_user}" sh "${SCRIPT}" auth-keys reject "${_base}" 2>&1)
+    _ec=$?
+    assert_eq "TP-KEY-15 reject exit 0" 0 "$_ec"
+    assert_contains "TP-KEY-15 rejected" "$_out" "Rejected"
+    assert_file_missing "TP-KEY-15 inbound moved" "${_store}/auth-key-request/${_base}"
+    assert_file_exists "TP-KEY-15 declined" "${_store}/auth-key-declined/${_base}"
+    assert_file_missing "TP-KEY-15 no authorized_keys" "${_homes}/bob/.ssh/authorized_keys"
+    ci_cleanup_env
+
+    # TP-KEY-17 Termux request fail-closed
+    ci_isolated_env
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice-laptop\n' > "${CI_HOME}/alice.pub"
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/alice.pub" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-KEY-17 Termux request exit 1" 1 "$_ec"
+    assert_contains "TP-KEY-17 Termux not available" "$_err" "not available for termux"
+    ci_cleanup_env
+
+    # TP-KEY-18 quote in public key refused
+    ci_isolated_env
+    _store="${CI_HOME}/store"
+    mkdir -p "${_store}/auth-key-request"
+    chmod 1777 "${_store}/auth-key-request"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest"Quote alice\n' > "${CI_HOME}/bad.pub"
+    _err=$(HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys request bob "${CI_HOME}/bad.pub" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-KEY-18 quoted key exit 1" 1 "$_ec"
+    assert_contains "TP-KEY-18 quoted key message" "$_err" "quote"
+    ci_cleanup_env
+
+    # TP-KEY-20 TTY keys 15 on POSIX; hidden on Termux
+    ci_isolated_env
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 sh "${SCRIPT}" 2>&1)
+    assert_contains "TP-KEY-20 POSIX request row 15" "$_out" "15."
+    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" 2>&1)
+    assert_not_contains "TP-KEY-20 Termux hides 15" "$_out" "15."
+    ci_cleanup_env
 }

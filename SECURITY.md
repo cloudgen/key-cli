@@ -82,5 +82,5 @@ This product implements **automatic companion-checksum** on online install and s
 
 - Preferred language for reports: English.  
 - Out of scope: social engineering of third parties, physical attacks, spam.  
-- Domain: `auth-keys list` prints **public** key lines by design; never print private keys.  
+- Domain: `auth-keys list` prints **public** key lines by design; never print private keys. Queued request JSON stores one public-key line only (quotes refused).  
 - Related product docs: [`README.md`](./README.md), [`LICENSE.md`](./LICENSE.md), [`CHANGELOG.md`](./CHANGELOG.md).

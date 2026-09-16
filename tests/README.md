@@ -16,7 +16,7 @@ Exit **0** when all assertions pass; **1** on failure; **2** if ship unit missin
 |------|--------|-------------|
 | `run.sh` | Entrypoint | — |
 | `helpers.sh` | Asserts + isolated HOME | — |
-| `test_cli.sh` | CLI surface, empty argv, domain help, TTY unknown menu retry, removed sshd/client verbs | **TP-CLI-*** · **TP-KEY-*** |
+| `test_cli.sh` | CLI surface, empty argv, domain help, TTY unknown menu retry, auth-key request/approve queue, removed sshd/client verbs | **TP-CLI-*** · **TP-KEY-*** |
 | `test_local_lifecycle.sh` | install / self-uninstall / about / login rc / `BASHRC` fixture / `rc-test` | **TP-LC-*** · **TP-CSUM-01** |
 | `test_config_backup.sh` | `backup` / `restore` / `auth-keys` / sudoers grant; Termux/Git Bash/Windows fail-closed; on-behalf refuse; LPU F6/F7 | **TP-CFG-01..27** |
 

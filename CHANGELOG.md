@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-09-16
+
+### Added
+
+- **Auth-key request queue** (core): login A runs `key-cli auth-keys request B ./A.pub`; JSON lands in `/var/key-cli/auth-key-request/`; **key-adm** runs `pending` / `approve` / `reject` / `interactive` (one-off yes/no). Approve re-validates, takes a global backup, appends B’s `authorized_keys`, and moves the file to `auth-key-accepted/`. Product-local (not dest, not sudoer-cli). TTY keys **15** request; on-behalf **24** pending / **25** interactive. Tests **TP-KEY-10** .. **TP-KEY-15**, **TP-KEY-17**, **TP-KEY-18**, **TP-KEY-20**.
+
 ## [2.0.3] - 2026-09-16
 
 ### Changed
