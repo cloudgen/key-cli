@@ -6,15 +6,15 @@
 
 ## 1. Purpose
 
-This requirement owns the **Type 0 / Type 1 / Type 2 map** for sshd-cli. Type 2 is unused. Type 1 is the approved `sudo sshd-cli backup-config` grant (not a dedicated system user). **Sudoer verbs, JSON body, and `util_sudo` SSOT:** `requirement-shell-sudoer`. Do **not** duplicate those handlers here.
+This requirement owns the **Type 0 / Type 1 / Type 2 map** for key-cli. Type 1 is the approved `sudo key-cli backup` / `restore` grant plus root `setup`. Type 2 is **key-adm**. **Sudoer verbs, JSON body, and `util_sudo` SSOT:** `requirement-shell-sudoer`. Do **not** duplicate those handlers here.
 
 ### 1.1 Human-facing
 
-**In one sentence:** you write a JSON grant, queue it for sudoer-adm, or as root install the printed fragment so `sudo sshd-cli backup-config` needs no password.
+**In one sentence:** you write a JSON grant, queue it for sudoer-adm, or as root install the printed fragment so `sudo key-cli backup` needs no password; **key-adm** is the on-behalf operator.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Generate and submit | `sshd-cli generate-sudoer-request` then `sshd-cli submit-sudoer-request` |
+| You / this login | Generate and submit | `key-cli generate-sudoer-request` then `key-cli submit-sudoer-request` |
 | The other role | sudoer-adm or a root login | approve inbound, or `sudo sh …-sudoers-admin.sh install` |
 | Not this file | JSON field table; copy ops | `requirement-shell-sudoer` · `requirement-shell-config-backup` |
 
@@ -24,13 +24,13 @@ This requirement owns the **Type 0 / Type 1 / Type 2 map** for sshd-cli. Type 2 
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli print-sudoers` | draft | admin review |
+| `key-cli print-sudoers` | draft | admin review |
 | inbound | queued JSON | approval |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Ask for the grant | JSON then queue | `sshd-cli generate-sudoer-request` · `sshd-cli submit-sudoer-request` |
-| Install as root | Admin script | `sshd-cli print-sudoers-install-script` then `sudo sh FILE install` |
+| Ask for the grant | JSON then queue | `key-cli generate-sudoer-request` · `key-cli submit-sudoer-request` |
+| Install as root | Admin script | `key-cli print-sudoers-install-script` then `sudo sh FILE install` |
 
 ## 2. Core Rules / Requirements (Mandatory)
 
@@ -47,25 +47,25 @@ This requirement owns the **Type 0 / Type 1 / Type 2 map** for sshd-cli. Type 2 
 Samples:
 
 ```text
-sshd-cli print-sudoers
-sshd-cli print-sudoers --allow-test-local "$HOME/.config/sshd-cli/sudoers.fragment-$(id -un)"
-sshd-cli generate-sudoer-request
-sshd-cli submit-sudoer-request
-sshd-cli print-sudoers-install-script
-sshd-cli remove-project-sudoers
+key-cli print-sudoers
+key-cli print-sudoers --allow-test-local "$HOME/.config/key-cli/sudoers.fragment-$(id -un)"
+key-cli generate-sudoer-request
+key-cli submit-sudoer-request
+key-cli print-sudoers-install-script
+key-cli remove-project-sudoers
 ```
 
 ### 2.2 Trust tier
 
-production = readable+executable `{{GLOBAL_BIN}}/sshd-cli`. test_local = only `{{USER_BIN}}`. unmanaged = neither. Non-production emit **MUST** fail closed unless `--allow-test-local` or `ALLOW_TEST_LOCAL_SUDOERS=1`.
+production = readable+executable `{{GLOBAL_BIN}}/key-cli`. test_local = only `{{USER_BIN}}`. unmanaged = neither. Non-production emit **MUST** fail closed unless `--allow-test-local` or `ALLOW_TEST_LOCAL_SUDOERS=1`.
 
 ### 2.3 Paths
 
 | Kind | Path |
 |------|------|
-| Installed fragment | `/etc/sudoers.d/sshd-cli-{{username}}` |
-| Draft | `{{HOME}}/.config/sshd-cli/sudoers.fragment-{{username}}` |
-| Local JSON | `{{HOME}}/.config/sshd-cli/sudoer-request-{{username}}.json` |
+| Installed fragment | `/etc/sudoers.d/key-cli-{{username}}` |
+| Draft | `{{HOME}}/.config/key-cli/sudoers.fragment-{{username}}` |
+| Local JSON | `{{HOME}}/.config/key-cli/sudoer-request-{{username}}.json` |
 | Inbound | `/var/sudoer-cli/sudoer-request` (must already exist) |
 
 Type 0 **MUST NOT** write `/etc`. **MUST NOT** mkdir inbound.

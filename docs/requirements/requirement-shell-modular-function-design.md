@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for **modular function organization** of the sshd-cli POSIX shell CLI.
+This requirement is the **project Single Source of Truth** for **modular function organization** of the key-cli POSIX shell CLI.
 
 It defines modular function organization for a **monolithic yet modular** single-file shell tool that remains `curl | sh` compatible.
 
@@ -15,7 +15,7 @@ It defines modular function organization for a **monolithic yet modular** single
 
 ### 1.1 Human-facing
 
-**In one sentence:** People still install **one file** (`./sshd-cli`); inside that file, functions stay in labeled families (`out_` print, `inst_` install, `app_` menu, `prompt_` questions) so a change to help does not rewrite download.
+**In one sentence:** People still install **one file** (`./key-cli`); inside that file, functions stay in labeled families (`out_` print, `inst_` install, `app_` menu, `prompt_` questions) so a change to help does not rewrite backup.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
@@ -30,11 +30,11 @@ It defines modular function organization for a **monolithic yet modular** single
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `./sshd-cli` | The one program file | Function families |
+| `./key-cli` | The one program file | Function families |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Change a message | Edit an `out_*` helper, not a raw `echo` in install. | Open `./sshd-cli`, find `out_` |
+| Change a message | Edit an `out_*` helper, not a raw `echo` in install. | Open `./key-cli`, find `out_` |
 | Change first-install ask | Edit `inst_maybe_install` / `prompt_yes_no`, not `app_help`. | Same file; different prefix |
 
 ---
@@ -52,7 +52,7 @@ CIAO-Lite shell CLIs distributed as one-liners **MUST** use:
 | **Documented units** | Every public helper carries a defensive header and safe defaults |
 | **Requirements extract policy** | Durable rules live in `requirement-*.md`; code comments encode intent and Protection Zones |
 
-Optional multi-file layout under `src/` for future authoring **MAY** exist only if a build or pack step still produces **one** installable artifact and this requirement is updated. Until then, `./sshd-cli` remains the single shipped script.
+Optional multi-file layout under `src/` for future authoring **MAY** exist only if a build or pack step still produces **one** installable artifact and this requirement is updated. Until then, `./key-cli` remains the single shipped script.
 
 ### 2.2 Official function prefix table (mandatory)
 
@@ -67,12 +67,12 @@ Optional multi-file layout under `src/` for future authoring **MAY** exist only 
 | `ver_` | Version comparison | Semantic version handling | `ver_gt`, `ver_check` |
 | `path_` | Shell PATH & environment | PATH manipulation and shell config (bashrc/profile) | `path_add_shell`, `path_add_bashrc`, `path_ensure_profile` |
 | `prompt_` | Interactive prompts | TTY-safe confirmations and questions | `prompt_yes_no`, `prompt_ask` |
-| `sshd_` | Domain / product business logic | OpenSSH sshd verbs and Termux detect | `sshd_cmd_start`, `sshd_pkg_ensure`, `sshd_is_termux` |
+| `key_` | Domain / product business logic | SSH user-key backup/restore and Termux detect | `key_cmd_backup`, `key_cmd_restore`, `key_is_termux` |
 
 **`app_*` vs domain prefix:**
 
 - **`app_*`** — cross-cutting CLI surface every shell CLI needs (main, help, about, version routing).  
-- **`sshd_*`** — domain business logic only (OpenSSH sshd + Termux detect).  
+- **`key_*`** — domain business logic only (SSH user-key backup/restore + Termux detect).  
 - Do **not** put domain ops under `app_*`.  
 - Do **not** put generic about/help/main under the domain prefix unless a specialized requirement explicitly requires product-prefixed aliases.
 
@@ -92,7 +92,7 @@ Every non-trivial function **MUST** include a defensive header of this shape (tr
 
 #### 2.3.1 Product-source documentation authority
 
-Optional `ALIGNMENT` / `See` / “fully synchronized with” lines in **product source** (`./sshd-cli`) **MUST** cite only **live** `docs/requirements/requirement-*.md` paths that exist on disk and appear in `docs/requirements/index.md`.
+Optional `ALIGNMENT` / `See` / “fully synchronized with” lines in **product source** (`./key-cli`) **MUST** cite only **live** `docs/requirements/requirement-*.md` paths that exist on disk and appear in `docs/requirements/index.md`.
 
 | Allowed in product source comments | Forbidden in product source comments |
 |------------------------------------|--------------------------------------|
@@ -154,7 +154,7 @@ function_name() {
 | CLI entry / dispatch | `app_*` | Single dispatcher; no second parallel main |
 | Interactive confirm | `prompt_*` | Single source for yes/no; non-interactive safe behavior |
 | Backup / storage resolve | `util_*` | Reusable; no domain-specific hardcodes as universal law |
-| Domain product ops | `sshd_*` | OpenSSH sshd verbs and Termux-ish detect |
+| Domain product ops | `key_*` | SSH user-key backup/restore and Termux-ish detect |
 
 ### 2.5 Surgical change and reuse rules (portable)
 
@@ -166,17 +166,17 @@ function_name() {
 
 ### 2.6 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Single shipped script** | Repo root `./sshd-cli` (`#!/bin/sh`); authoring copy `src/sshd-cli` (same bytes) |
-| **`src/` directory** | Holds the same single-file ship unit (`src/sshd-cli`); **not** a multi-file runtime layout |
-| **Domain prefix `sshd_*`** | Domain ops: `sshd_cmd_*`, `sshd_resolve`, `sshd_pkg_ensure` |
-| **Bootstrap** | Direct execution when `${0##*/}` is `sshd-cli` or `sshd-cli.sh` → `app_main "$@"` |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Single shipped script** | Repo root `./key-cli` (`#!/bin/sh`); authoring copy `src/key-cli` (same bytes) |
+| **`src/` directory** | Holds the same single-file ship unit (`src/key-cli`); **not** a multi-file runtime layout |
+| **Domain prefix `key_*`** | Domain ops: `key_cmd_*`, `key_resolve`, `key_pkg_ensure` |
+| **Bootstrap** | Direct execution when `${0##*/}` is `key-cli` or `key-cli.sh` → `app_main "$@"` |
 
 #### Live prefix inventory (authoritative categories)
 
-| Prefix | Live examples in `./sshd-cli` |
+| Prefix | Live examples in `./key-cli` |
 |--------|----------------------------------|
 | `out_` | `out_text`, `out_success`, `out_info`, `out_warn`, `out_error`, `out_die`, `out_plain`, `out_msg_n`, `out_empty_line`, `out_double_line`, `out_json`, `out_json_error` |
 | `inst_` | `inst_perform_install`, `inst_ensure_companion`, `inst_perform_install_prepare_target`, `inst_perform_install_download_with_checksum`, `inst_perform_install_download_without_checksum`, `inst_perform_install_atomic_install`, `inst_maybe_install`, `inst_self_update`, `inst_self_uninstall` (+ determine_bin / confirm_and_remove / cleanup_path), `inst_is_installed`, `inst_get_version` |
@@ -185,7 +185,7 @@ function_name() {
 | `util_` | `util_json_escape`, `util_sha256_file`, `util_fetch_remote_version`, `util_get_install_bin_path`, `util_backup`, `util_try_mkdir_storage`, `util_resolve_storage` (**wired** from `app_main` / `app_about`; mkdir fail-soft; SSOT: `requirement-shell-cli-storage.md`), `util_resolve_persistent_storage` (preferred-remote leaf), `util_sudo` (**backup-config** re-exec; SSOT: `requirement-shell-sudo-command.md`), `util_get_current_shell` |
 | `prompt_` | `prompt_ask`, `prompt_yes_no` |
 | `app_` | `app_about`, `app_version` (dispatcher routes `version` here), `app_help`, `app_main` |
-| `sshd_` | `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`, `sshd_os_name`, `sshd_menu_show_daemon_rows`, `sshd_is_systemd_host`, `sshd_systemd_unit`, `sshd_systemd_is_active`, `sshd_systemd_main_pid`, `sshd_resolve`, `sshd_pkg_ensure`, `sshd_start_after_install`, `sshd_try_start_linux`, `sshd_ifconfig_ipv4`, `sshd_lan_ipv4`, `sshd_connect_cmd`, `sshd_cmd_status` / `start` / `stop` / `restart` / `port` / `config` / `host_keys` / `auth_keys` / `menu` |
+| `key_` | `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`, `key_os_name`, `key_menu_show_daemon_rows`, `key_is_systemd_host`, `key_systemd_unit`, `key_systemd_is_active`, `key_systemd_main_pid`, `key_resolve`, `key_pkg_ensure`, `key_start_after_install`, `key_try_start_linux`, `key_ifconfig_ipv4`, `key_lan_ipv4`, `key_connect_cmd`, `key_cmd_status` / `start` / `stop` / `restart` / `port` / `config` / `host_keys` / `auth_keys` / `menu` |
 
 #### Structural notes (implementation status)
 
@@ -198,7 +198,7 @@ function_name() {
 
 #### New function checklist (this project)
 
-When adding a function to `./sshd-cli`:
+When adding a function to `./key-cli`:
 
 1. Choose the correct prefix from §2.2 / this inventory.  
 2. Add the defensive header (full for non-trivial logic).  
@@ -243,9 +243,9 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
-**This requirement:** class-detect helpers live under `sshd_*`; **MUST NOT** add a `util_sudo` family on that class.
+**This requirement:** class-detect helpers live under `key_*`; **MUST NOT** add a `util_sudo` family on that class.
 
 ---
 
@@ -271,7 +271,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (shell modular function design)
 
-A modular-structure change for sshd-cli is **not done** if any of the following fail:
+A modular-structure change for key-cli is **not done** if any of the following fail:
 
 1. Every new function uses an approved prefix from this requirement.  
 2. Critical helpers retain defensive headers and Protection intent.  
@@ -294,10 +294,10 @@ A modular-structure change for sshd-cli is **not done** if any of the following 
 | `docs/requirements/requirement-shell-idempotency.md` | Re-run safety inside ensure helpers |
 | `docs/requirements/requirement-shell-output-requirements.md` | `out_*` ownership |
 | `docs/requirements/index.md` | Registry SSOT |
-| `./sshd-cli` | Implementation under modular design rules |
+| `./key-cli` | Implementation under modular design rules |
 
 ---
 
 **Last Updated**: 2026-09-05  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 6, 7, 8, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

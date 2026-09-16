@@ -1,0 +1,4884 @@
+#!/bin/sh
+# =============================================================================
+# key-cli - Backup and restore SSH user keys
+# =============================================================================
+#
+# Specialized from bootstrap origin selfmanaged (A → B only). Type 0
+# install/self-update/self-uninstall inherited; domain prefix key_*.
+#
+# FULL FEATURED SELF-MANAGED PROGRAM (CIAO / CIAO-Lite Compliant)
+#
+# This is the single executable POSIX /bin/sh implementation of key-cli
+# (Type 0 lifecycle plus SSH user-key backup/restore domain).
+# Project requirements (docs/requirements/ only — never cite templates here):
+# - requirement-shell-cli-interface.md
+# - requirement-shell-cli-default-interaction.md (TTY numbered tree 1/2/8)
+# - requirement-shell-cli-zero-arguments.md  (empty argv: TTY menu / non-TTY install-ensure)
+# - requirement-shell-cli-storage.md         (util_resolve_storage + about fields)
+# - requirement-shell-idempotency.md
+# - requirement-shell-self-management.md
+# - requirement-shell-modular-function-design.md
+# - requirement-shell-output-requirements.md
+# - requirement-shell-interactive-vs-noninteractive.md
+# - requirement-shell-automatic-checksum.md
+# - requirement-domain-key.md
+# - requirement-shell-config-backup.md
+# - requirement-sudoer-json-file.md
+# - requirement-three-layer-privilege-model.md
+# - requirement-shell-sudo-command.md
+# - requirement-shell-script-coding.md
+# - requirement-shell-termux-ish.md
+# Plus CIAO Protection Zones and "DO NOT MODIFY" rules.
+#
+# Philosophy: CIAO (Caution • Intentional • Anti-fragile • Over-engineered)
+# Single file for curl | sh compatibility.
+#
+# APP NAME: hard-assign APP_NAME="key-cli" (extractor parity with VERSION); optional := default after.
+# REPO_USER / REPO_NAME: GitHub owner/repo identity for the install channel.
+# SCRIPT_URL: product channel SSOT — composed from repo identity + APP_NAME (raw content URL).
+#   Override SCRIPT_URL with env for a full custom channel; or override REPO_* before first use
+#   so the composed default follows a fork. Empty SCRIPT_URL disables version-check / self-update network steps.
+# BASHRC: interactive rc write path for PATH ensure (default ${HOME}/.bashrc). Override for tests/CI
+#   so install can target a temp file instead of this login's real ~/.bashrc.
+#
+# =============================================================================
+
+set -u  # Treat unset variables as error (defensive)
+# Note: We do NOT use set -e globally. We use explicit error handling via out_die.
+
+# =============================================================================
+# GLOBAL SAFE DEFAULTS (Single Source of Truth for configuration)
+# =============================================================================
+# Product identity SSOT (extractors use: grep '^APP_NAME="' / '^VERSION="').
+APP_NAME="key-cli"
+: "${APP_NAME:=key-cli}"
+: "${APP_DESC:=Backup and restore SSH user keys}"
+: "${SHORT_DESCRIPTION:=${APP_DESC}}"
+: "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, and (as key-adm) do the same on behalf of other users.}"
+# Product version SSOT (semver). Extractors use: grep '^VERSION="'
+VERSION="2.0.2"
+: "${VERSION:=2.0.2}"
+
+# Runtime flags (safe defaults)
+: "${QUIET:=0}"
+: "${JSON:=0}"
+: "${INTERACTIVE:=0}"
+: "${FORCE:=0}"
+: "${FORCE_REINSTALL:=0}"
+: "${DEBUG:=0}"
+: "${TTY:=0}"
+
+# ----------------------------- Safe Variable Defaults ------------------------
+if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+    : "${GLOBAL_BIN:=${PREFIX}/bin}"
+else
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+fi
+# INC-20260713-001: under set -u, never expand bare ${HOME} before it is set.
+# Order: resolve HOME (safe ${HOME-} probes) → then USER_BIN from HOME.
+# Prefer existing non-empty HOME; else passwd home (getent / USER); else /tmp.
+if [ -z "${HOME-}" ]; then
+    _home_resolved=""
+    if command -v getent >/dev/null 2>&1; then
+        if [ -n "${USER-}" ]; then
+            _home_resolved=$(getent passwd "${USER}" 2>/dev/null | cut -d: -f6)
+        fi
+        if [ -z "${_home_resolved}" ]; then
+            _home_resolved=$(getent passwd "$(id -un 2>/dev/null || echo "")" 2>/dev/null | cut -d: -f6)
+        fi
+    fi
+    if [ -z "${_home_resolved}" ] && [ -n "${USER-}" ] && [ -r /etc/passwd ]; then
+        _home_resolved=$(awk -F: -v u="${USER}" '$1==u {print $6; exit}' /etc/passwd 2>/dev/null)
+    fi
+    if [ -n "${_home_resolved}" ] && [ -d "${_home_resolved}" ]; then
+        HOME="${_home_resolved}"
+    else
+        HOME="/tmp"
+    fi
+    export HOME
+    unset _home_resolved
+fi
+: "${HOME:=/tmp}"
+: "${USER_BIN:=${HOME}/.local/bin}"
+# Interactive rc write path (PATH ensure). Empty/unset → ${HOME}/.bashrc.
+: "${BASHRC:=${HOME}/.bashrc}"
+: "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+# Repository identity → install channel (Option B: raw.githubusercontent.com)
+: "${REPO_USER:=cloudgen}"
+: "${REPO_NAME:=key-cli}"
+: "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
+: "${CHECKSUM:=}"
+: "${KEY_CLI_ROOT:=/var/${APP_NAME}}"
+: "${KEY_HOME_ROOT:=/home}"
+: "${KEY_ADM_USER:=key-adm}"
+: "${KEY_ADM_UID:=1666}"
+: "${KEY_ADM_GID:=1666}"
+: "${KEY_ADM_HOME:=/etc/key-adm}"
+: "${KEY_NESTED_BACKUP:=0}"
+: "${ALLOW_TEST_LOCAL_SUDOERS:=0}"
+: "${SUBMIT_ACTION:=add}"
+: "${SUBMIT_ACTION_EXPLICIT:=0}"
+: "${SUBMIT_PURPOSE:=}"
+: "${SUDOER_ADM_USER:=sudoer-adm}"
+: "${SUDOER_CLI:=}"
+
+[ -t 0 ] && [ -t 1 ] && TTY=1
+USERNAME="$(id -un 2>/dev/null || echo "unknown")"
+# Privilege SSOT for recommended install path / bin choice (set -u safe).
+# Re-detected inside inst_perform_install before mutating INSTALL_PATH.
+if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+    IS_ROOT=1
+else
+    IS_ROOT=0
+fi
+: "${IS_ROOT:=0}"
+: "${SH:=sh}"
+# =============================================================================
+# out_text() - SINGLE SOURCE OF TRUTH FOR ALL OUTPUT
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Centralized output handler for all human-readable messages.
+# Respects --quiet, --json, and TTY detection for colors.
+# All user-facing text (out_info, out_success, out_warn, out_error, etc.) MUST go through this
+# function to maintain consistency and JSON-mode compatibility.
+#
+# INTENTIONAL DESIGN:
+# This is the single source of truth for all terminal output in the project.
+# Never use raw echo/printf for product user messages elsewhere.
+#
+# PRINTF EXCEPTION (class A – inside output SSOT):
+# This function MAY call printf to fd 1/2 for product human messages.
+# That is intentional: out_text is the authorized human emitter.
+# Other code must not copy these printf lines for banners/status; call out_* instead.
+# See requirement-shell-output-requirements.md §2.1.1 (printf exceptions).
+#
+# Applied exactly as required by requirement-shell-output-requirements.md
+# Last reviewed: 2026-07-12
+# Lessons Learned (CIAO Reflection):
+# 2026-07-12: Quiet mode previously suppressed warnings; requirement says
+#             quiet MUST show errors and SHOULD show warnings on stderr.
+#             Added out_debug (stderr, DEBUG=1 only, suppressed under JSON).
+# 2026-07-12: Documented that not every printf is banned — only product messaging
+#             that bypasses this SSOT (return-via-stdout, file I/O, tool pipes allowed).
+# =============================================================================
+out_text() {
+    local level="$1" msg="$2"
+    : "${JSON:=0}" : "${QUIET:=0}" : "${DEBUG:=0}"
+    # JSON mode: never emit human-readable lines (machines use out_json*)
+    [ "${JSON}" -eq 1 ] && return 0
+
+    case "${level}" in
+        out_error)
+            # Always shown (even under --quiet)
+            ;;
+        out_warn)
+            # Shown under --quiet (diagnostics stay on stderr)
+            ;;
+        out_debug)
+            [ "${DEBUG}" -eq 1 ] || return 0
+            ;;
+        *)
+            [ "${QUIET}" -eq 1 ] && return 0
+            ;;
+    esac
+
+    local RED='' GREEN='' YELLOW='' BLUE='' NC=''
+    [ "${TTY:-0}" -eq 1 ] && [ "${QUIET}" -eq 0 ] && [ "${JSON}" -eq 0 ] && {
+        RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+    }
+
+    case "${level}" in
+        out_error)   printf >&2 "${RED}[ERROR]${NC} %s\n" "${msg}" ;;
+        out_warn)    printf >&2 "${YELLOW}[WARN]${NC} %s\n" "${msg}" ;;
+        out_debug)   printf >&2 "${BLUE}[DEBUG]${NC} %s\n" "${msg}" ;;
+        out_info)    printf "${GREEN}[INFO]${NC} %s\n" "${msg}" ;;
+        out_success) printf "${GREEN}[OK]${NC} %s\n" "${msg}" ;;
+        plain)       printf "%s\n" "${msg}" ;;
+        plain_n)     printf "%s" "${msg}" ;;
+        *)           printf "%s\n" "${msg}" ;;
+    esac
+}
+
+# =============================================================================
+# out_debug() - Debug diagnostics on stderr (DEBUG=1 only; never under --json)
+# =============================================================================
+out_debug() { out_text out_debug "$*"; }
+
+# =============================================================================
+# out_success()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_success()   → green [OK]
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+out_success() { out_text out_success "$*"; }
+
+# =============================================================================
+# out_info()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_info()      → green [INFO]
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+out_info() { out_text out_info "$*"; }
+
+# =============================================================================
+# out_warn()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_warn()      → yellow [WARN]
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+out_warn() { out_text out_warn "$*"; }
+
+out_error()   { out_text "out_error"   "$*"; }
+# =============================================================================
+# out_die()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_die()       → out_error + exit(1)  (also triggers JSON out_error)
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+out_die() { out_json_error "$*"; out_text out_error "$*"; exit 1; }
+
+# =============================================================================
+# out_plain() - Output plain text
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience function to output plain text (no prefix, no color).
+# Part of the standardized out_* output system.
+#
+# CRITICAL RULE:
+# All product user-facing text MUST go through the output system.
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+#
+# INTENTIONAL DESIGN:
+# Short, readable call while keeping real logic in out_text().
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+out_plain() {
+    out_text plain "$*"
+}
+
+# Last updated: 2026-09-14
+# Numbered menu row: number + bold short + italic long (TTY SGR 1 / 3;37).
+# ALIGNMENT: requirement-shell-cli-default-interaction · requirement-shell-output-requirements
+out_menu_choice() {
+    _mc_n="${1-}"
+    _mc_short="${2-}"
+    _mc_long="${3-}"
+    : "${JSON:=0}" : "${QUIET:=0}" : "${TTY:=0}"
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        unset _mc_n _mc_short _mc_long
+        return 0
+    fi
+    if [ "${TTY}" -eq 1 ]; then
+        printf '%s. \033[1m%s\033[0m: \033[3;37m%s\033[0m\n' "${_mc_n}" "${_mc_short}" "${_mc_long}"
+    else
+        printf '%s. %s: %s\n' "${_mc_n}" "${_mc_short}" "${_mc_long}"
+    fi
+    unset _mc_n _mc_short _mc_long
+}
+
+# =============================================================================
+# out_msg_n() - Output message WITHOUT trailing newline (for interactive prompts)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrapper around out_text() for printing prompts that require
+# user input on the SAME line (e.g. "Continue? (y/N)? ").
+# Used exclusively by prompt_yes_no() and any future interactive prompts.
+#
+# CRITICAL RULE:
+# This is the ONLY allowed way to produce non-newline product prompt text.
+# Return values from prompt_ask use class-B printf (data return), not this helper.
+# All product output must respect --quiet and --json (never shown in those modes).
+#
+# INTENTIONAL DESIGN:
+# Short, readable call while keeping real logic in out_text() as Single
+# Source of Truth. Uses the existing 'plain_n' level already supported
+# by out_text().
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution: Never breaks prompt flow in non-interactive/curl | sh mode
+# - Intentional: Explicitly named for prompt usage (not generic plain_n)
+# - Anti-fragile: Works with TTY detection, colors, and JSON/quiet guards
+# - Over-protect: Follows exact same pattern as out_plain/out_info/etc.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-output-requirements.md (out_* SSOT, plain_n)
+# - requirement-shell-interactive-vs-noninteractive.md (prompt fragments)
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other CIAO-Lite projects.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-05-31: Added this missing convenience wrapper after prompt_yes_no()
+#             was referencing a non-existent helper. Prevents regression
+#             in interactive confirmation flow.
+# 2026-07-12: ALIGNMENT corrected to live docs/requirements/ paths only.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+out_msg_n() { out_text plain_n "$*"; }
+
+# =============================================================================
+# out_empty_line()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_empty_line() → visual separators
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+out_empty_line() { out_text plain ""; }
+
+
+# =============================================================================
+# out_double_line()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Convenience wrappers around out_text() for common message types.
+# 
+# - out_double_line() → visual separators
+#
+# CRITICAL RULE:
+# These are the ONLY allowed ways to produce product user-visible messages
+# (see §2.1.1 for non-product printf exceptions: return values, file I/O, pipes).
+# All product output must respect --quiet and --json via out_text.
+#
+# INTENTIONAL DESIGN:
+# Short, readable calls throughout the script while keeping all real logic
+# inside out_text() as Single Source of Truth.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+out_double_line() { out_text plain "=================================================="; }
+
+# =============================================================================
+# out_json() - JSON output helper
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Emits clean, machine-readable JSON when --json flag is used.
+# Used by all command modes that support structured output.
+#
+# INTENTIONAL DESIGN:
+# Keeps JSON output minimal, consistent, and escaped safely.
+# Must be used together with out_json_error() for errors.
+#
+# PRINTF EXCEPTION (class A – inside output SSOT):
+# This function MAY printf product JSON to stdout. Nested
+# printf|sed is only for field escaping (tool pipe, still SSOT-owned).
+# Command logic must not emit JSON with raw printf; call out_json instead.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+# util_json_escape() - Escape a string for inclusion in a JSON double-quoted value
+# GENERAL PURPOSE: Prevent broken machine JSON when values contain " or \.
+# Class B helper used only by out_json / out_json_error (not a product message).
+util_json_escape() {
+    # Escape \, ", and common controls so JSON cannot be broken by newlines/tabs (L-06).
+    # awk is POSIX; multi-line values become \n between physical lines.
+    printf '%s' "${1-}" | awk '
+    {
+      line = $0
+      gsub(/\\/, "\\\\", line)
+      gsub(/"/, "\\\"", line)
+      gsub(/\t/, "\\t", line)
+      gsub(/\r/, "\\r", line)
+      if (NR > 1) printf "\\n"
+      printf "%s", line
+    }'
+}
+
+out_json() {
+    [ "${JSON}" -eq 0 ] && return 0
+    local type="$1" message="$2" key raw_key; shift 2
+    # Success/status JSON on stdout (SSOT-of-stdout; pure for pipes)
+    # Escape type, message, and string key/value pairs (M7 / machine contract).
+    # Raw nested JSON: key prefixed with "@" → value inserted unquoted (caller builds
+    # a complete JSON array/object; key name is without the "@"). Portable SSOT for
+    # specialized products that need nested structures (requirement-shell-output-requirements).
+    printf '{'
+    printf '"type":"%s"' "$(util_json_escape "$type")"
+    [ -n "$message" ] && printf ',"message":"%s"' "$(util_json_escape "$message")"
+    while [ $# -ge 2 ]; do
+        key="$1"
+        case "$key" in
+            @*)
+                raw_key="${key#@}"
+                printf ',"%s":%s' "$(util_json_escape "$raw_key")" "$2"
+                ;;
+            *)
+                printf ',"%s":"%s"' "$(util_json_escape "$key")" "$(util_json_escape "$2")"
+                ;;
+        esac
+        shift 2
+    done
+    printf '}\n'
+}
+
+# =============================================================================
+# out_json_error() - JSON error on stderr (SSOT-of-stderr)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Emit a structured error object in JSON mode on **stderr** so success
+# consumers can use:  tool --json … > out.json 2> err.log
+#
+# PRINTF EXCEPTION (class A – inside output SSOT):
+# This function MAY printf structured error JSON to stderr (product machine
+# channel). Nested printf|sed is escape-only. Callers use out_json_error /
+# out_die — never hand-roll JSON with printf in command logic.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-07-12: Previously delegated to out_json (stdout), which mixed errors
+#             into the success channel. Errors now always go to stderr.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+out_json_error() {
+    [ "${JSON}" -eq 0 ] && return 0
+    local message="$1" code="${2:-unknown}"
+    printf >&2 '{'
+    printf >&2 '"type":"%s"' "out_error"
+    [ -n "$message" ] && printf >&2 ',"message":"%s"' "$(util_json_escape "$message")"
+    printf >&2 ',"code":"%s"' "$(util_json_escape "$code")"
+    printf >&2 '}\n'
+}
+
+# =============================================================================
+# inst_perform_install() - Perform the actual installation (v2 with checksum)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Orchestrates the complete installation flow:
+#   0. Companion ensure (always): create/modify BASHRC (default ~/.bashrc) PATH,
+#      create ~/.profile if absent (requirement-domain-key, requirement-shell-self-management)
+#   1. Privilege-aware path setup (root → /usr/local/bin, normal user → ~/.local/bin)
+#   2. Early exit if already installed (unless --force / FORCE_REINSTALL=1)
+#   3. Target directory preparation
+#   4. Secure download with layered checksum verification:
+#        - If CHECKSUM env var is set → strict verification (user/CI pinned version)
+#        - Otherwise → best-effort verification via ${SCRIPT_URL}.sha256 (if present)
+#   5. Atomic move + chmod via inst_perform_install_atomic_install()
+#
+# This is the SINGLE SOURCE OF TRUTH for all installation operations
+# (initial install, self-update, and forced reinstall).
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): Never trust network download without verification when possible.
+#   Always use mktemp, explicit error checks, and atomic mv.
+# - Intentional (Principle 2): Clear step-by-step flow with explicit if/then blocks.
+#   Behavior is fully predictable in interactive, quiet, JSON, and non-TTY modes.
+# - Anti-fragile (Principle 3): Works for both root and normal users, survives partial
+#   failures, and maintains backward compatibility when no CHECKSUM is provided.
+# - Over-protect (Principle 18): Strong Protection Zone, safe defaults, checksum layers,
+#   and cleanup on every error path. Designed to be reusable across CIAO-Lite projects.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is the central installation orchestrator. Any change must preserve the
+# checksum decision logic, atomic install step, and variable scoping for helpers.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-06-26:
+#   - Original implementation was a stub (created tmp_file then returned 0).
+#     This made self-update and the core install path completely non-functional.
+#   - Updated to wire the existing v2 download helpers + atomic install helper.
+#   - Changed mktemp error handling to explicit if (matching the style enforced
+#     in inst_perform_install_download_without_checksum).
+#   - Added safe defaults for FORCE_REINSTALL and CHECKSUM.
+#   - Ensured tmp_file is always cleaned on failure paths.
+#   - Preserved full original defensive header and only appended this Lessons Learned section.
+#
+# Last reviewed: 2026-09-05
+# =============================================================================
+
+inst_perform_install() {
+    # --- Safe Variable Defaults ---
+    if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+    : "${GLOBAL_BIN:=${PREFIX}/bin}"
+else
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+fi
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${SKIP_DOMAIN_START:=0}"
+    : "${CHECKSUM:=}"
+    : "${SCRIPT_URL:=}"
+    : "${REMOTE_VERSION:=}"
+
+    if [ "$(id -u)" -eq 0 ]; then
+        IS_ROOT=1
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        IS_ROOT=0
+        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
+    fi
+
+    if [ -z "$REMOTE_VERSION" ]; then
+        REMOTE_VERSION=${VERSION}
+    fi
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_info "Starting installation of ${APP_NAME} ${REMOTE_VERSION}..."
+    fi
+
+    # Companion ensure runs even when the CLI binary is already installed so
+    # a second `install` still heals missing rc files / Termux packages.
+    inst_ensure_companion
+
+    if inst_is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "out_success" "${APP_NAME} is already installed."
+        else
+            # Success no-op: re-running curl | sh / install does not require --force.
+            # --force is only for deliberate re-download/replace (see self-update).
+            out_success "${APP_NAME} is already installed."
+            out_info "Use --force only to reinstall deliberately (or run: ${APP_NAME} self-update)."
+        fi
+        return 0
+    fi
+
+    # Step 1: Prepare target folder
+    if ! inst_perform_install_prepare_target; then
+        return 1
+    fi
+
+    local tmp_file
+    tmp_file=$(mktemp -t "${APP_NAME}.XXXXXX")
+    if [ -z "${tmp_file}" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Failed to create temporary file" "io_error"
+        else
+            out_error "Failed to create temporary file"
+        fi
+        return 1
+    fi
+
+    local downloaded_checksum_ok=0
+    : "${INST_AUTO_CHECKSUM_OK:=0}"
+
+    if [ -n "${CHECKSUM}" ]; then
+        # Strict user/CI-provided checksum (highest security)
+        if inst_perform_install_download_with_checksum "${tmp_file}"; then
+            downloaded_checksum_ok=1
+        else
+            rm -f "${tmp_file}" 2>/dev/null || true
+            return 1
+        fi
+    else
+        # Automatic verification via ${SCRIPT_URL}.sha256 (primary integrity path)
+        INST_AUTO_CHECKSUM_OK=0
+        if ! inst_perform_install_download_without_checksum "${tmp_file}"; then
+            rm -f "${tmp_file}" 2>/dev/null || true
+            return 1
+        fi
+        # Set only when companion matched (not on missing-sidecar continue)
+        downloaded_checksum_ok=${INST_AUTO_CHECKSUM_OK:-0}
+    fi
+
+    # Step 4: Atomic move to final location + PATH update + success message
+    if ! inst_perform_install_atomic_install "${tmp_file}" "${downloaded_checksum_ok}"; then
+        rm -f "${tmp_file}" 2>/dev/null || true
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# inst_perform_install_prepare_target() - Step 1: Target folder preparation
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Creates the correct installation directory (global or user) with proper
+# permissions check.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+inst_perform_install_prepare_target() {
+    if [ "$IS_ROOT" -eq 1 ]; then
+        if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Failed to create ${GLOBAL_BIN}" "io_error"
+            else
+                out_error "Failed to create ${GLOBAL_BIN}"
+            fi
+            return 1
+        fi
+    else
+        if ! mkdir -p "${USER_BIN}" 2>/dev/null; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Failed to create ${USER_BIN}" "io_error"
+            else
+                out_error "Failed to create ${USER_BIN}"
+            fi
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# =============================================================================
+# inst_perform_install_download_with_checksum() - Step 2: Download with explicit CHECKSUM
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads the script and verifies it against user-provided CHECKSUM (strict).
+#
+# PRINTF EXCEPTION (class D – tool protocol / computation pipe):
+# printf '%s  %s\n' … | sha256sum -c feeds the verifier only (not product UI).
+# Status/errors still go through out_* / out_json_error / out_die.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+inst_perform_install_download_with_checksum() {
+    local tmp_file="$1"
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_info "Verifying download against provided CHECKSUM..."
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Download failed (curl)" "network_error"
+            else
+                out_error "Download failed (curl)"
+            fi
+            return 1
+        }
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Download failed (wget)" "network_error"
+            else
+                out_error "Download failed (wget)"
+            fi
+            return 1
+        }
+    else
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Neither curl nor wget found" "missing_dependency"
+        else
+            out_error "Neither curl nor wget found"
+        fi
+        return 1
+    fi
+
+    # Verify provided CHECKSUM (sha256sum | shasum | openssl — util_sha256_file)
+    local actual
+    actual=$(util_sha256_file "${tmp_file}") || actual=""
+    if [ -n "${actual}" ] && [ "${CHECKSUM}" = "${actual}" ]; then
+        if [ "${JSON}" -eq 0 ]; then
+            out_success "Checksum verification passed (user-provided CHECKSUM)."
+        fi
+        return 0
+    else
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Checksum verification failed (provided CHECKSUM does not match)" "checksum_mismatch"
+        else
+            out_die "Checksum verification failed. The downloaded file does not match the provided CHECKSUM. Installation aborted for security."
+        fi
+        return 1
+    fi
+}
+
+# =============================================================================
+# inst_perform_install_download_without_checksum() - Step 3: Download with automatic .sha256
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads the script and attempts best-effort verification via ${SCRIPT_URL}.sha256.
+# Falls back gracefully if no .sha256 file exists (backward compatible).
+# Uses robust, auditable hash comparison that actually works.
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): Never trust download without verification when possible.
+# - Intentional (Principle 2): Explicit HTTP code capture and clear hash comparison.
+#   All error handling uses explicit if/then blocks (no || {} or compact || return).
+# - Anti-fragile (Principle 3): Tolerates minor whitespace in .sha256 file.
+# - Over-protect (Principle 18): Security-critical install path now has working
+#   verification and follows current coding standards.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-self-management.md (install download / integrity path)
+# - requirement-shell-output-requirements.md (out_* status and errors)
+# - requirement-shell-modular-function-design.md (inst_* ownership, headers)
+# Source comments cite only files under docs/requirements/ that exist on disk.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other CIAO-Lite projects.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-06-07:
+#   - Fixed fundamentally broken verification: `sha256sum -c ... < "${tmp_file}"`
+#     does not work as intended.
+#   - Removed all `|| {}` and `|| return 1` patterns in this function to comply
+#     with updated coding standard.
+#   - Both curl and wget paths now use consistent, explicit error handling.
+# 2026-07-12: ALIGNMENT retargeted to live docs/requirements/ files only;
+#             removed citations to non-existent requirements / templates.
+# 2026-07-14: requirement-shell-automatic-checksum transparency (link/value/result);
+#             first-field digest parse (sha256sum "hash  file" lines); set
+#             INST_AUTO_CHECKSUM_OK=1 on companion match so atomic install can
+#             report verified success (was always 0 on automatic path).
+#
+# Last reviewed: 2026-07-14
+# =============================================================================
+
+inst_perform_install_download_without_checksum() {
+    local tmp_file="$1"
+    # Caller (inst_perform_install) reads this after return 0.
+    # 1 = companion present and digests match; 0 = missing sidecar (warn+continue) or unset.
+    INST_AUTO_CHECKSUM_OK=0
+    : "${SCRIPT_URL:=}"
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_info "No CHECKSUM pin → automatic integrity via companion ${SCRIPT_URL}.sha256"
+        out_info "Companion link: ${SCRIPT_URL}.sha256"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}"; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Download failed (curl)" "network_error"
+            else
+                out_error "Download failed (curl)"
+            fi
+            return 1
+        fi
+
+        local sha_file
+        sha_file=$(mktemp -t "${APP_NAME}.sha256.XXXXXX")
+        if [ -z "${sha_file}" ]; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Failed to create temporary file for checksum" "io_error"
+            else
+                out_error "Failed to create temporary file for checksum"
+            fi
+            return 1
+        fi
+
+        # Capture HTTP code cleanly
+        local http_code
+        http_code=$(curl -fsSL -w "%{http_code}" "${SCRIPT_URL}.sha256" -o "${sha_file}" 2>/dev/null)
+
+        if [ "${http_code}" = "200" ]; then
+            # First field only: bare hex or standard "hash  filename" lines
+            local expected actual
+            expected=$(awk 'NF { print $1; exit }' "${sha_file}" 2>/dev/null)
+            actual=$(util_sha256_file "${tmp_file}") || actual=""
+
+            if [ -n "${expected}" ] && [ -n "${actual}" ] && [ "${expected}" = "${actual}" ]; then
+                INST_AUTO_CHECKSUM_OK=1
+                if [ "${JSON}" -eq 0 ]; then
+                    out_info "Expected SHA-256: ${expected}"
+                    out_info "Actual SHA-256:   ${actual}"
+                    out_success "Automatic checksum result: PASS (match ${SCRIPT_URL}.sha256)."
+                fi
+            else
+                rm -f "${sha_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    out_json_error "Automatic checksum verification failed" "checksum_mismatch"
+                else
+                    out_info "Expected SHA-256: ${expected:-"(empty)"}"
+                    out_info "Actual SHA-256:   ${actual:-"(empty)"}"
+                    out_die "Checksum verification failed (mismatch with ${SCRIPT_URL}.sha256). Installation aborted for security."
+                fi
+                return 1
+            fi
+        else
+            if [ "${JSON}" -eq 0 ]; then
+                out_warn "No .sha256 companion at ${SCRIPT_URL}.sha256 → continuing without automatic verification."
+            fi
+        fi
+        rm -f "${sha_file}" 2>/dev/null || true
+
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -qO "${tmp_file}" "${SCRIPT_URL}"; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Download failed (wget)" "network_error"
+            else
+                out_error "Download failed (wget)"
+            fi
+            return 1
+        fi
+
+        local sha_file
+        sha_file=$(mktemp -t "${APP_NAME}.sha256.XXXXXX")
+        if [ -z "${sha_file}" ]; then
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Failed to create temporary file for checksum" "io_error"
+            else
+                out_error "Failed to create temporary file for checksum"
+            fi
+            return 1
+        fi
+
+        if wget -q --server-response "${SCRIPT_URL}.sha256" -O "${sha_file}" 2>&1 | grep -qE "HTTP/[0-9.]+ 200"; then
+            local expected actual
+            expected=$(awk 'NF { print $1; exit }' "${sha_file}" 2>/dev/null)
+            actual=$(util_sha256_file "${tmp_file}") || actual=""
+
+            if [ -n "${expected}" ] && [ -n "${actual}" ] && [ "${expected}" = "${actual}" ]; then
+                INST_AUTO_CHECKSUM_OK=1
+                if [ "${JSON}" -eq 0 ]; then
+                    out_info "Companion link: ${SCRIPT_URL}.sha256"
+                    out_info "Expected SHA-256: ${expected}"
+                    out_info "Actual SHA-256:   ${actual}"
+                    out_success "Automatic checksum result: PASS (match ${SCRIPT_URL}.sha256)."
+                fi
+            else
+                rm -f "${sha_file}"
+                if [ "${JSON}" -eq 1 ]; then
+                    out_json_error "Automatic checksum verification failed" "checksum_mismatch"
+                else
+                    out_info "Expected SHA-256: ${expected:-"(empty)"}"
+                    out_info "Actual SHA-256:   ${actual:-"(empty)"}"
+                    out_die "Checksum verification failed (mismatch with ${SCRIPT_URL}.sha256). Installation aborted for security."
+                fi
+                return 1
+            fi
+        else
+            if [ "${JSON}" -eq 0 ]; then
+                out_warn "No .sha256 companion at ${SCRIPT_URL}.sha256 → continuing without automatic verification."
+            fi
+        fi
+        rm -f "${sha_file}" 2>/dev/null || true
+
+    else
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Neither curl nor wget found" "missing_dependency"
+        else
+            out_error "Neither curl nor wget found"
+        fi
+        return 1
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# inst_perform_install_atomic_install() - Step 4: Atomic copy to target location
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Makes the downloaded file executable and atomically moves it to the final
+# INSTALL_PATH. PATH / rc files are owned by inst_ensure_companion.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+inst_perform_install_atomic_install() {
+    local tmp_file="$1"
+    local downloaded_checksum_ok="$2"
+
+    chmod 0755 "${tmp_file}" 2>/dev/null || chmod +x "${tmp_file}" 2>/dev/null || true
+
+    rm -f "${INSTALL_PATH}" 2>/dev/null
+    if ! mv "${tmp_file}" "${INSTALL_PATH}" 2>/dev/null; then
+        rm -f "${tmp_file}"
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Failed to move to ${INSTALL_PATH}" "io_error"
+        else
+            out_error "Failed to move to ${INSTALL_PATH}"
+        fi
+        return 1
+    fi
+    chmod 0755 "${INSTALL_PATH}" 2>/dev/null || true
+
+    # PATH / rc files are ensured in inst_ensure_companion (before binary place
+    # and on already-installed re-runs). Do not duplicate here.
+
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "out_success" "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}" "path" "${INSTALL_PATH}"
+    else
+        out_success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+        if [ "${downloaded_checksum_ok}" -eq 1 ]; then
+            out_success "✓ Download was cryptographically verified."
+        fi
+    fi
+    return 0
+}
+
+# =============================================================================
+# inst_ensure_companion() - Login rc PATH ensure (install companion)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Always-on companion of `install` / empty-argv install-ensure. Creates or
+# modifies BASHRC (default this login's ~/.bashrc) PATH and creates ~/.profile
+# if missing. Does not install OpenSSH.
+# Idempotent. Runs even when the CLI binary is already installed.
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): never wrap Linux apt; this product does not pkg-install OpenSSH.
+# - Intentional (Principle 2): rc PATH ensure is the only companion.
+# - Anti-fragile (Principle 3): create-if-missing; never overwrite .profile.
+# - Over-protect (Principle 4 / 20): duplicate PATH guard; JSON/quiet silent.
+#
+# Product law: requirement-shell-self-management.md · requirement-domain-key.md
+#
+# Last reviewed: 2026-09-05
+# =============================================================================
+
+inst_ensure_companion() {
+    : "${JSON:=0}"
+    path_add_shell
+    return 0
+}
+
+# =============================================================================
+# inst_maybe_install() - Friendly installation prompt
+# =============================================================================
+#
+# Respects both --quiet and --json modes.
+# Quiet/JSON: no prompt — MUST call inst_perform_install (not return 0 skip).
+# Interactive gate consumes process TTY (set once at startup), not a second [ -t.
+# Uses prompt_yes_no() as single source of truth for confirmation.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# Designed to be reusable in other projects.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-07-13:
+#   - Under set -u, recommended-install branch used IS_ROOT / SH before any
+#     assignment (those were only set inside inst_perform_install). Crash:
+#     "IS_ROOT: parameter not set" after printing "Recommended installation
+#     command:". Fixed with local privilege detection + SH/SCRIPT_URL defaults.
+# 2026-09-02:
+#   - JSON/QUIET returned 0 without placing (SM-BUG-01). Specializees that
+#     copy this helper as Case A SSOT inherited silent success. Now calls
+#     inst_perform_install and returns its status. Prompt gate reads TTY.
+#
+# Last updated: 2026-09-02
+# =============================================================================
+
+inst_maybe_install() {
+    : "${QUIET:=0}"
+    : "${JSON:=0}"
+    : "${TTY:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${SCRIPT_URL:=}"
+    : "${SH:=sh}"
+    # Privilege for recommended install command (set -u safe; same rule as inst_perform_install)
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        IS_ROOT=1
+    else
+        IS_ROOT=0
+    fi
+
+    if inst_is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        return 0
+    fi
+    # Quiet or JSON: place with no prompt (requirement-shell-cli-zero-arguments §2.4).
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        inst_perform_install
+        return $?
+    fi
+    out_empty_line
+    out_plain "Note: '${APP_NAME}' is not installed yet."
+    out_plain "     Version: ${VERSION}"
+    out_empty_line
+    out_plain "Recommended installation command:"
+    out_empty_line
+
+    if key_is_normal_user_only_cli; then
+        out_plain "     curl -fsSL ${SCRIPT_URL} | ${SH}"
+    elif [ "$IS_ROOT" -eq 1 ]; then
+        out_plain "     sudo curl -fsSL ${SCRIPT_URL} | sudo ${SH}"
+    else
+        out_plain "     curl -fsSL ${SCRIPT_URL} | ${SH}"
+    fi
+    out_empty_line
+
+    _maybe_should_install=0
+
+    if [ "${TTY}" -eq 1 ]; then
+        if prompt_yes_no "Install ${APP_NAME} ${VERSION} now?"; then
+            _maybe_should_install=1
+        else
+            out_plain "Installation skipped by user."
+            return 0
+        fi
+    else
+        out_plain "Non-interactive mode detected → installing automatically..."
+        _maybe_should_install=1
+    fi
+
+    if [ "${_maybe_should_install}" -eq 1 ]; then
+        inst_perform_install
+        return $?
+    fi
+    return 0
+}
+
+# =============================================================================
+# inst_self_update() - Perform atomic self-update to latest version
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Orchestrates self-update for the installed ${APP_NAME} binary.
+# Fetches the remote VERSION string, compares it with the locally installed
+# version, and (if different or --force) delegates to inst_perform_install
+# with FORCE_REINSTALL=1. Designed to be safe, idempotent-friendly, and
+# respectful of the current installation type (user vs global).
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): Never downgrades without explicit FORCE; always
+#   verifies remote version before proceeding; uses centralized output.
+# - Intentional (Principle 2): Clear separation between version check and
+#   actual install; explicit variable handling and error paths.
+# - Anti-fragile (Principle 3): Works for both root and normal users;
+#   survives missing SCRIPT_URL (graceful error) and network failures.
+# - Over-protect (Principle 18): Full CIAO header, safe defaults, Protection
+#   Zone comment, and Lessons Learned traceability. Reusable pattern for
+#   other CIAO-Lite self-managed tools.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-self-management.md
+# - requirement-shell-cli-interface.md
+# - requirement-shell-output-requirements.md
+# - requirement-shell-idempotency.md
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is the canonical self-update entry point. Any change must preserve
+# the REMOTE_VERSION visibility contract with inst_perform_install and
+# the centralized output discipline.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-06-26: Original implementation was a stub. Updated to call the v2
+#             inst_perform_install path with checksum support.
+# 2026-06-26 (correction): Removed accidental `local` on REMOTE_VERSION
+#             (was invisible to inst_perform_install). Added safe default
+#             for SCRIPT_URL and explicit comment about distribution URL
+#             requirement. No hard-coded project-specific values introduced.
+#
+# Last updated: 2026-09-09
+# =============================================================================
+
+inst_self_update() {
+    # --- Safe Variable Defaults ---
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${SKIP_DOMAIN_START:=0}"
+    : "${SCRIPT_URL:=}"
+
+    # Align force aliases (CLI --force sets both)
+    if [ "${FORCE}" -eq 1 ]; then
+        FORCE_REINSTALL=1
+    fi
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_info "Starting self-update of ${APP_NAME}..."
+    fi
+
+    # SCRIPT_URL is Config SSOT (composed default from REPO_* / APP_NAME).
+    # Override via env for forks or offline channels. Empty → fail loud below.
+
+    REMOTE_VERSION=$(util_fetch_remote_version "${SCRIPT_URL}")
+
+    if [ -z "$REMOTE_VERSION" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Failed to fetch latest version" "network_error"
+        else
+            out_error "Failed to fetch latest version (SCRIPT_URL may be unset or unreachable)"
+        fi
+        return 1
+    fi
+
+    local local_version
+    local_version=$(inst_get_version)
+
+    if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "out_success" "Already running the latest version (${REMOTE_VERSION})."
+        else
+            out_success "Already running the latest version (${REMOTE_VERSION})."
+        fi
+        return 0
+    fi
+
+    # No silent downgrade: remote older than local requires --force
+    # (requirement-shell-self-management.md)
+    if [ "$local_version" != "not installed" ] && \
+       [ "$local_version" != "unknown" ] && \
+       ver_gt "$local_version" "$REMOTE_VERSION" && \
+       [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Refusing downgrade from ${local_version} to ${REMOTE_VERSION} (use --force)" "downgrade_blocked"
+        else
+            out_error "Refusing silent downgrade: local ${local_version} is newer than remote ${REMOTE_VERSION}."
+            out_info "Re-run with --force to reinstall/downgrade deliberately."
+        fi
+        return 1
+    fi
+
+    if [ "$local_version" != "$REMOTE_VERSION" ] && [ "${JSON}" -eq 0 ]; then
+        if ver_gt "$REMOTE_VERSION" "$local_version" 2>/dev/null || [ "$local_version" = "not installed" ]; then
+            out_info "Updating from ${local_version} → ${REMOTE_VERSION}"
+        else
+            out_warn "Force reinstall/downgrade: ${local_version} → ${REMOTE_VERSION}"
+        fi
+    fi
+
+    FORCE_REINSTALL=1
+    inst_perform_install
+}
+
+# =============================================================================
+# inst_self_uninstall() - Main orchestrator for uninstallation
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Removes the installed ${APP_NAME} binary (global or user) and optionally
+# cleans up PATH entries.
+#
+# Respects --force, --quiet, and --json.
+# Works for both root and user installations.
+#
+# DESIGN:
+# Split into three clear steps for readability while preserving original
+# behavior and safety.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+inst_self_uninstall() {
+    # Align force aliases (CLI --force)
+    : "${FORCE:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    if [ "${FORCE}" -eq 1 ]; then
+        FORCE_REINSTALL=1
+    fi
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_info "Starting self-uninstall of ${APP_NAME}..."
+    fi
+
+    # Step 1: Determine which installation to remove
+    local bin_path
+    bin_path=$(inst_self_uninstall_determine_bin)
+    if [ -z "$bin_path" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "out_success" "${APP_NAME} is not installed. Nothing to uninstall."
+        else
+            out_warn "${APP_NAME} is not installed. Nothing to uninstall."
+        fi
+        return 0
+    fi
+
+    # Step 2: Confirm (if needed) and perform removal
+    if ! inst_self_uninstall_confirm_and_remove "$bin_path"; then
+        return 1
+    fi
+
+    # Step 3: Clean up PATH entries (user installs only)
+    inst_self_uninstall_cleanup_path
+
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "out_success" "${APP_NAME} has been uninstalled."
+    else
+        out_success "${APP_NAME} has been uninstalled."
+    fi
+    return 0
+}
+
+# =============================================================================
+# inst_self_uninstall_determine_bin() - Step 1: Determine which installation to remove
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Decides the correct binary path to remove based on current user,
+# FORCE_GLOBAL, and actual file presence.
+#
+# Returns the full path to remove, or empty string if nothing to uninstall.
+#
+# PRINTF EXCEPTION (class B – function return-via-stdout):
+# Final printf '%s' "$bin_path" is a data return for $(…) capture by the
+# uninstall orchestrator — not a product user message. User-facing text in
+# this helper uses out_warn. Callers must capture the path; do not treat
+# this printf as a substitute for out_*.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# CRITICAL: Respects root vs user logic exactly as before.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+inst_self_uninstall_determine_bin() {
+    # Prefer shared path SSOT (util_get_install_bin_path); only return if file exists.
+    : "${APP_NAME:=key-cli}"
+    if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+    : "${GLOBAL_BIN:=${PREFIX}/bin}"
+else
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+fi
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+
+    local bin_path=""
+    bin_path=$(util_get_install_bin_path)
+    if [ -n "${bin_path}" ] && [ -f "${bin_path}" ]; then
+        printf '%s' "${bin_path}"
+        return 0
+    fi
+    # Empty → not installed (caller treats as nothing to uninstall)
+    printf '%s' ""
+}
+
+# =============================================================================
+# inst_self_uninstall_confirm_and_remove() - Step 2: Confirm and remove binary
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Handles confirmation (unless --force) and actual file removal.
+# Interactive TTY uses prompt_yes_no(); non-interactive / --json / --quiet
+# fail closed with an explicit --force requirement (never auto-delete).
+#
+# Returns 0 on out_success, non-zero on failure/cancel.
+#
+# Last reviewed: 2026-07-13
+# =============================================================================
+
+inst_self_uninstall_confirm_and_remove() {
+    local bin_path="$1"
+
+    # Confirm before removal (unless --force / FORCE_REINSTALL).
+    # Non-interactive / --json / --quiet: fail closed — never auto-delete.
+    # Do not report that as "cancelled by user" (user never answered a prompt).
+    if [ "${FORCE_REINSTALL:-0}" -eq 0 ] && [ "${FORCE:-0}" -eq 0 ]; then
+        : "${JSON:=0}"
+        : "${QUIET:=0}"
+
+        if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || ! [ -t 0 ] || ! [ -t 1 ]; then
+            # requirement-shell-interactive-vs-noninteractive.md: destructive ops need --force
+            if [ "${JSON}" -eq 1 ]; then
+                out_json_error "Uninstall requires --force in non-interactive mode (refusing to remove ${bin_path})." "confirm_required"
+            else
+                out_error "Uninstall requires --force in non-interactive mode (refusing to remove ${bin_path})."
+                out_info "Re-run with: ${APP_NAME} self-uninstall --force"
+            fi
+            return 1
+        fi
+
+        if prompt_yes_no "This will remove: ${bin_path}"; then
+            :  # confirmed on TTY
+        else
+            # Interactive TTY: user answered no / empty (default N)
+            out_plain "Uninstall cancelled by user."
+            return 1
+        fi
+    fi
+
+    # Remove the binary
+    if rm -f "$bin_path" 2>/dev/null; then
+        return 0
+    else
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Failed to remove ${bin_path} (permission denied?)" "permission_denied"
+        else
+            out_error "Failed to remove ${bin_path} (permission denied?)"
+        fi
+        return 1
+    fi
+}
+
+# =============================================================================
+# inst_self_uninstall_cleanup_path() - Step 3: Clean up PATH entries
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Removes installer-added PATH entries from shell config files
+# (bash, zsh, fish) for user-level installations **only if** USER_BIN
+# is empty or does not exist.
+#
+# SAFETY RULE:
+# If USER_BIN still contains other files (other tools, scripts, etc.),
+# we deliberately keep the PATH entry to avoid breaking the user's environment.
+# This follows CIAO-Lite "Caution" and "Anti-fragile" principles.
+#
+# Last reviewed: 2026-07-14
+# =============================================================================
+
+inst_self_uninstall_cleanup_path() {
+    # Only attempt cleanup for non-root installs
+    if [ "$(id -u)" -eq 0 ]; then
+        return 0
+    fi
+
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${BASHRC:=${HOME}/.bashrc}"
+    local bin_dir="${USER_BIN}"
+    local should_clean_path=1
+
+    # === SAFETY CHECK: Only clean PATH if USER_BIN is empty ===
+    if [ -d "$bin_dir" ]; then
+        if [ -n "$(ls -A "$bin_dir" 2>/dev/null)" ]; then
+            # Directory exists and is not empty → keep PATH for other tools
+            should_clean_path=0
+            if [ "${JSON}" -eq 0 ]; then
+                out_warn "Keeping ${bin_dir} in PATH because it still contains files."
+            fi
+        fi
+    fi
+
+    # Always strip this product's installer comments. Strip the shared PATH
+    # line only when USER_BIN is empty (sibling unify).
+    local cleaned=0
+    local escaped_bin
+    local escaped_name
+    escaped_bin=$(printf '%s' "${bin_dir}" | sed 's/[\\/&|]/\\&/g')
+    escaped_name=$(printf '%s' "${APP_NAME}" | sed 's/[\\/&|]/\\&/g')
+    : "${ZSHRC:=${HOME}/.zshrc}"
+    : "${FISH_CONFIG:=${HOME}/.config/fish/config.fish}"
+
+    for config in "${BASHRC}" "${ZSHRC}" "${FISH_CONFIG}"; do
+        if [ -f "$config" ]; then
+            if [ "$should_clean_path" -eq 1 ]; then
+                if sed -i.bak \
+                    -e "/# Added by ${escaped_name} installer/d" \
+                    -e "\|${escaped_bin}|d" \
+                    "$config" 2>/dev/null; then
+                    cleaned=1
+                fi
+            else
+                if sed -i.bak \
+                    -e "/# Added by ${escaped_name} installer/d" \
+                    "$config" 2>/dev/null; then
+                    cleaned=1
+                fi
+            fi
+            rm -f "${config}.bak" 2>/dev/null || true
+        fi
+    done
+
+    if [ "$cleaned" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+        out_plain "→ Cleaned ${APP_NAME} PATH entries from shell config files"
+        out_plain "→ You may want to restart your terminal"
+    fi
+}
+
+# =============================================================================
+# inst_is_installed() - Robust installation check
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Checks whether the program is already installed, supporting both root
+# and normal user installations with safe fallbacks.
+#
+# Please don't modify this code for root-only installed
+# You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
+#   this function
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+inst_is_installed() {
+    version=$(inst_get_version)
+    if [ "${version}" = "not installed"  ]; then 
+        return 1
+    else
+        return 0
+    fi
+}
+
+# =============================================================================
+# inst_get_version() - Extract version from installed binary
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Safely reads the VERSION constant from the installed script.
+# Used by --version-check and --self-update.
+#
+# Safe Variable Defaults
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+#
+# CRITICAL WARNING - VERSION EXTRACTION IS ESSENTIAL FOR SELF-UPDATE:
+# Knowing the exact installed version is not optional — it is the foundation
+# of safe self-update and version-check logic.
+#
+# Without a reliable inst_get_version(), self-update cannot properly
+# compare local version against remote, leading to:
+# - Unnecessary re-downloads
+# - Failed updates
+# - Silent failures
+# - Potential downgrade or broken installation
+#
+# AI assistants frequently fail to respect this importance. They often
+# overlook, simplify, or remove version extraction logic because they
+# consider it "minor" or try to replace the entire self-update flow with
+# a simpler approach. This always breaks the self-update mechanism.
+#
+# This function is battle-field tested and intentionally simple/robust
+# (grep + cut on the VERSION= line). Any attempt to rewrite or bypass it
+# risks destroying the self-update safety net.
+#
+# We must intentionally preserve and reuse this exact function instead of
+# replacing it. Respecting version awareness is a core part of CIAO
+# Caution and Anti-fragility.
+#
+# PRINTF/ECHO EXCEPTION (class B – function return-via-stdout):
+# echo "unknown" / echo "not installed" / grep|cut pipeline output are data
+# returns for $(inst_get_version) capture — not product banners. Callers
+# pass the string into out_* / out_json when displaying to the user.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+inst_get_version() {
+    # --- Safe Variable Defaults ----
+    # Align with util_get_install_bin_path: non-root prefers user-local when present (L-03).
+    : "${APP_NAME:=app}"
+    : "${IS_ROOT:=0}"
+    : "${HOME:=/tmp}"
+    if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+    : "${GLOBAL_BIN:=${PREFIX}/bin}"
+else
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+fi
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+
+    local bin_path=""
+    if [ "${FORCE_USER}" -eq 1 ]; then
+        bin_path="${USER_BIN}/${APP_NAME}"
+    elif [ "${FORCE_GLOBAL}" -eq 1 ] || [ "${IS_ROOT}" -eq 1 ] || [ "$(id -u)" -eq 0 ]; then
+        bin_path="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        if [ -x "${USER_BIN}/${APP_NAME}" ]; then
+            bin_path="${USER_BIN}/${APP_NAME}"
+        elif [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            bin_path="${GLOBAL_BIN}/${APP_NAME}"
+        else
+            bin_path="${USER_BIN}/${APP_NAME}"
+        fi
+    fi
+
+    if [ -x "$bin_path" ]; then
+        grep '^VERSION="' "$bin_path" 2>/dev/null | cut -d'"' -f2 || echo "unknown"
+    else
+        echo "not installed"
+    fi
+}
+
+# =============================================================================
+# ver_gt() - Pure POSIX semantic version comparison
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns 0 (true) if ver1 > ver2, otherwise returns 1 (false).
+# Used by ver_check() and inst_self_update() to prevent incorrect downgrades.
+#
+# Safe Variable Defaults
+# Respects CIAO zero-dependency rule — no external tools (no sort -V).
+#
+# CRITICAL DESIGN CHOICE:
+# This function was added because previous AI suggestions using `sort -V`
+# were not portable enough for harsh environments (Alpine ash, busybox,
+# minimal containers, Git Bash, etc.).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly tried to replace this with:
+#   - `sort -V` one-liners
+#   - Inline string comparisons
+#   - "Cleaner" but less robust logic
+#
+# Any such change re-introduces downgrade bugs and breaks portability.
+# This function must remain pure POSIX and self-contained.
+#
+# AI assistants are explicitly required to:
+# - Never remove or inline this function
+# - Always use it for all version comparisons in grokrec
+# - Preserve all defensive comments
+# - Study the test script provided by the user before suggesting changes
+#
+# This is part of the battle-field-tested defensive layer.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+ver_gt() {
+    # --- Safe Variable Defaults ----
+    v1=$1
+    v2=$2
+
+    while [ -n "$v1" ] || [ -n "$v2" ]; do
+        p1=${v1%%.*}
+        p2=${v2%%.*}
+
+        [ -z "$p1" ] && p1=0
+        [ -z "$p2" ] && p2=0
+
+        if [ "$p1" -gt "$p2" ]; then
+            return 0
+        fi
+        if [ "$p1" -lt "$p2" ]; then
+            return 1
+        fi
+
+        if [ "$v1" = "${v1#*.}" ]; then
+            v1=""
+        else
+            v1=${v1#*.}
+        fi
+
+        if [ "$v2" = "${v2#*.}" ]; then
+            v2=""
+        else
+            v2=${v2#*.}
+        fi
+    done
+
+    return 1    # versions are equal
+}
+
+# =============================================================================
+# ver_check() - Check for newer version from remote source
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Compares the locally installed version of ${APP_NAME} against the remote
+# version available at SCRIPT_URL. Supports both human-readable output and
+# clean JSON mode. Used by the `version-check` command and as a helper for
+# self-update decision logic.
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): Never assumes SCRIPT_URL is set; graceful failure
+#   with actionable error when remote version cannot be fetched.
+# - Intentional (Principle 2): Explicit safe defaults, clear separation of
+#   version fetching vs comparison, and consistent behavior in JSON/quiet modes.
+# - Anti-fragile (Principle 3): Works whether the tool is installed globally,
+#   per-user, or not yet installed; survives network or parsing failures.
+# - Over-protect (Principle 18): Full defensive header, Protection Zone,
+#   Lessons Learned traceability, and strict avoidance of hard-coded
+#   project-specific URLs or repository paths.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-self-management.md
+# - requirement-shell-cli-interface.md
+# - requirement-shell-output-requirements.md
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This function is the single source of truth for remote version comparison.
+# Any change must preserve the SCRIPT_URL handling contract and the exact
+# JSON output shape expected by consumers.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-06-26: Original version contained a hardcoded project-specific default
+#             URL pointing to an unrelated repository (porting artifact).
+#             Corrected to empty safe default + explicit comment. Removed
+#             all hard-coded distribution details to comply with generalization
+#             and hardcoding-prevention rules.
+#
+# Last reviewed: 2026-06-26
+# =============================================================================
+
+ver_check() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${SCRIPT_URL:=}"
+
+    # SCRIPT_URL is Config SSOT (composed default from REPO_USER/REPO_NAME/APP_NAME).
+    # Override via env for forks or offline channels. Empty → network steps fail loud.
+
+    # Fetch remote version (curl or wget)
+    REMOTE_VERSION=$(util_fetch_remote_version "${SCRIPT_URL}")
+
+    if [ -z "$REMOTE_VERSION" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Failed to fetch remote version" "network_error"
+        else
+            out_error "Failed to fetch remote version (SCRIPT_URL may be unset or unreachable)"
+        fi
+        return 1
+    fi
+
+    local local_version
+    local_version=$(inst_get_version)
+
+    if [ "${JSON}" -eq 1 ]; then
+        # out_json type message key value … — empty message so fields stay key/value pairs
+        local _is_latest="false"
+        if [ "$local_version" = "$REMOTE_VERSION" ]; then
+            _is_latest="true"
+        elif ver_gt "$local_version" "$REMOTE_VERSION" 2>/dev/null; then
+            _is_latest="true"
+        fi
+        out_json "ver_check" "" \
+            "local_version" "$local_version" \
+            "remote_version" "$REMOTE_VERSION" \
+            "is_latest" "${_is_latest}"
+    else
+        if [ "${QUIET}" -eq 0 ]; then
+            out_info "Checking latest version of ${APP_NAME}..."
+            out_plain "Local version : ${local_version}"
+            out_plain "Latest version: ${REMOTE_VERSION}"
+            out_empty_line
+
+            if [ "$local_version" = "$REMOTE_VERSION" ]; then
+                out_success "You are running the latest version."
+            elif ver_gt "$local_version" "$REMOTE_VERSION"; then
+                out_success "You are running a newer development version (${local_version} > ${REMOTE_VERSION})"
+            elif [ "$local_version" = "not installed" ]; then
+                out_warn "${APP_NAME} is not installed yet."
+            else
+                out_warn "A newer version is available (${REMOTE_VERSION})"
+            fi
+        fi
+    fi
+}
+
+
+# =============================================================================
+# path_add_bashrc() - Add USER_BIN to BASHRC (default ~/.bashrc)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Appends the PATH export to BASHRC only if the exact export line is absent.
+#
+# BASHRC defaults to ${HOME}/.bashrc. Tests/CI may override BASHRC to a file
+# in a temp folder so this login's real interactive rc is not touched.
+#
+# Creates the file if missing, then appends the PATH export only if the exact
+# `export PATH="<USER_BIN>:$PATH"` line is not already present. Returns 0 if
+# created or PATH was added, 1 if the exact line is already present or
+# create/write failed.
+#
+# PRINTF EXCEPTION (class C – file I/O redirect):
+# printf … >> "$bashrc" writes shell config content to a file, not product
+# stdout/stderr. User-visible “→ Added …” lines use out_plain.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-09-09
+# =============================================================================
+
+path_add_bashrc() {
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${BASHRC:=${HOME}/.bashrc}"
+    : "${APP_NAME:=key-cli}"
+    : "${VERSION:=0}"
+    : "${JSON:=0}"
+    local bashrc="${BASHRC}"
+    local path_line
+    local created=0
+    path_line=$(printf 'export PATH="%s:$PATH"' "${USER_BIN}")
+
+    if [ ! -f "$bashrc" ]; then
+        if ! printf '# Interactive rc created by %s installer (%s)\n' "$APP_NAME" "$VERSION" > "$bashrc"; then
+            if [ "${JSON}" -eq 0 ]; then
+                out_warn "Could not create ${bashrc}. Next: create that file as this login, then re-run ${APP_NAME} install."
+            fi
+            return 1
+        fi
+        chmod 0644 "$bashrc" 2>/dev/null || true
+        created=1
+        if [ "${JSON}" -eq 0 ]; then
+            out_plain "→ Created ${bashrc}"
+        fi
+    fi
+
+    if ! grep -qF "${path_line}" "$bashrc" 2>/dev/null; then
+        printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$bashrc"
+        printf '%s\n' "${path_line}" >> "$bashrc"
+        if [ "${JSON}" -eq 0 ]; then
+            out_plain "→ Added ${USER_BIN} to PATH for bash"
+        fi
+        return 0
+    fi
+    # Sibling unify: exact PATH already present (this product or another).
+    # MAY append only this product's comment; MUST NOT a second export.
+    _comment=$(printf '# Added by %s installer (%s)' "$APP_NAME" "$VERSION")
+    if ! grep -qF "${_comment}" "$bashrc" 2>/dev/null; then
+        printf '\n%s\n' "${_comment}" >> "$bashrc"
+        unset _comment
+        if [ "$created" -eq 1 ]; then
+            return 0
+        fi
+        if [ "${JSON}" -eq 0 ]; then
+            out_plain "→ Noted ${APP_NAME} on existing PATH line"
+        fi
+        return 0
+    fi
+    unset _comment
+    if [ "$created" -eq 1 ]; then
+        return 0
+    fi
+    return 1  # already present
+}
+
+# =============================================================================
+# path_ensure_profile() - Create ~/.profile if absent (never overwrite)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# A login shell (SSH) reads ~/.profile, not ~/.bashrc. If .profile is missing,
+# PATH and interactive rc never run after SSH. Create a short file that sources
+# ~/.bashrc. If the file already exists, leave the body unchanged.
+#
+# Returns 0 if created, 1 if already present or create failed.
+#
+# PRINTF EXCEPTION (class C – file I/O redirect):
+# printf … > "$profile" writes shell config content to a file, not product
+# stdout/stderr. User-visible “→ Created …” lines use out_plain.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-09-05
+# =============================================================================
+
+path_ensure_profile() {
+    : "${HOME:=/tmp}"
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${PROFILE:=${HOME}/.profile}"
+    local profile="${PROFILE}"
+
+    if [ -f "$profile" ]; then
+        return 1
+    fi
+
+    if ! {
+        printf '# BEGIN %s profile source-bashrc\n' "$APP_NAME"
+        printf '# Created so a bash login shell sources interactive rc.\n'
+        printf 'if [ -n "${BASH_VERSION:-}" ]; then\n'
+        printf '    if [ -f "${HOME}/.bashrc" ]; then\n'
+        printf '        . "${HOME}/.bashrc"\n'
+        printf '    fi\n'
+        printf 'fi\n'
+        printf '# END %s profile source-bashrc\n' "$APP_NAME"
+    } > "$profile"; then
+        if [ "${JSON}" -eq 0 ]; then
+            out_warn "Could not create ${profile}. Next: create that file as this login so SSH login reads ~/.bashrc, then re-run ${APP_NAME} install."
+        fi
+        return 1
+    fi
+    chmod 0644 "$profile" 2>/dev/null || true
+    if [ "${JSON}" -eq 0 ]; then
+        out_plain "→ Created ${profile} (login shell sources ~/.bashrc)"
+    fi
+    return 0
+}
+
+# =============================================================================
+# path_add_zshrc() - Add ~/.local/bin to ~/.zshrc
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Appends the PATH export to ~/.zshrc only if not already present.
+#
+# Returns 0 if added (or was already present), 1 if file missing or failed.
+#
+# PRINTF EXCEPTION (class C – file I/O redirect):
+# printf … >> "$zshrc" writes shell config content to a file, not product
+# stdout/stderr. User-visible “→ Added …” lines use out_plain.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+path_add_zshrc() {
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${ZSHRC:=${HOME}/.zshrc}"
+    local zshrc="${ZSHRC}"
+    local path_line
+    path_line=$(printf 'export PATH="%s:$PATH"' "${USER_BIN}")
+    if [ ! -f "$zshrc" ]; then
+        return 1
+    fi
+
+    if ! grep -qF "${path_line}" "$zshrc" 2>/dev/null; then
+        printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$zshrc"
+        printf '%s\n' "${path_line}" >> "$zshrc"
+        if [ "${JSON}" -eq 0 ]; then
+            out_plain "→ Added ${USER_BIN} to PATH for zsh"
+        fi
+        return 0
+    fi
+    return 1  # already present
+}
+
+# =============================================================================
+# path_add_fish() - Add ~/.local/bin to Fish config
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Creates ~/.config/fish directory if needed and appends the PATH setting
+# to config.fish only if not already present.
+#
+# Returns 0 if added (or was already present), 1 if failed.
+#
+# PRINTF EXCEPTION (class C – file I/O redirect):
+# printf … >> "$fish_config" writes shell config content to a file, not
+# product stdout/stderr. User-visible “→ Added …” lines use out_plain.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+path_add_fish() {
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${FISH_CONFIG:=${HOME}/.config/fish/config.fish}"
+    local fish_config="${FISH_CONFIG}"
+    local path_line
+    path_line=$(printf 'set -gx PATH %s $PATH' "${USER_BIN}")
+
+    # Ensure parent directory exists (default ~/.config/fish; fixture may retarget)
+    _fish_dir=$(dirname "${fish_config}")
+    if [ ! -d "${_fish_dir}" ] && ! mkdir -p "${_fish_dir}" 2>/dev/null; then
+        unset _fish_dir
+        return 1
+    fi
+    unset _fish_dir
+
+    if [ -f "$fish_config" ] && grep -qF "${path_line}" "$fish_config" 2>/dev/null; then
+        return 1  # already present
+    fi
+
+    printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$fish_config"
+    printf '%s\n' "${path_line}" >> "$fish_config"
+
+    if [ "${JSON}" -eq 0 ]; then
+        out_plain "→ Added ${USER_BIN} to PATH for fish shell"
+    fi
+    return 0
+}
+
+# =============================================================================
+# path_add_shell() - Main orchestrator: Add USER_BIN to shell PATHs
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Adds ${USER_BIN} (default ${HOME}/.local/bin) to bash, zsh, and fish
+# configuration files if not already present. Creates BASHRC (default
+# ~/.bashrc) when missing. Creates ~/.profile when missing so a login shell
+# sources ~/.bashrc. Thin orchestrator for path_add_* / path_ensure_profile.
+#
+# Respects --json mode (silent in JSON).
+#
+# Last reviewed: 2026-09-09
+# =============================================================================
+
+path_add_shell() {
+    local added=0
+    local shell_config="N/A"
+    : "${HOME:=/tmp}"
+    : "${BASHRC:=${HOME}/.bashrc}"
+
+    # Bash (create BASHRC if missing, then PATH)
+    if path_add_bashrc; then
+        added=1
+        shell_config="${BASHRC}"
+    fi
+
+    # Zsh
+    if path_add_zshrc; then
+        added=1
+        if [ "$shell_config" = "N/A" ]; then
+            shell_config="${HOME}/.zshrc"
+        else
+            shell_config="${shell_config} ${HOME}/.zshrc"
+        fi
+    fi
+
+    # Fish
+    if path_add_fish; then
+        added=1
+        if [ "$shell_config" = "N/A" ]; then
+            shell_config="${HOME}/.config/fish/config.fish"
+        else
+            shell_config="${shell_config} ${HOME}/.config/fish/config.fish"
+        fi
+    fi
+
+    # Login rc: create ~/.profile if absent; never overwrite an existing body
+    if path_ensure_profile; then
+        added=1
+        if [ "$shell_config" = "N/A" ]; then
+            shell_config="${HOME}/.profile"
+        fi
+    fi
+
+    if [ "$added" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+        out_plain "→ Restart your terminal or run: source ${shell_config}"
+    fi
+}
+
+# =============================================================================
+# path_rc_test() - Type 0 test-purpose: PATH / profile ensure against --root
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Prove path-ensure / profile-ensure create|modify|noop on files under a
+# caller --root tmp folder. Does not write this login's real ~/.bashrc.
+# Law: requirement-shell-path-and-shell-support (rc-test).
+#
+# Last reviewed: 2026-09-09
+# =============================================================================
+
+path_rc_test() {
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${APP_NAME:=key-cli}"
+    : "${VERSION:=0}"
+    : "${JSON:=0}"
+    local root="" file="bashrc" cas="create" created_root=0
+    local real_bashrc="${HOME}/.bashrc"
+    local real_profile="${HOME}/.profile"
+    local dest="" before="" after="" path_line
+    path_line=$(printf 'export PATH="%s:$PATH"' "${USER_BIN}")
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --root)
+                shift
+                root="${1-}"
+                ;;
+            --file)
+                shift
+                file="${1-}"
+                ;;
+            --case)
+                shift
+                cas="${1-}"
+                ;;
+            --feature)
+                shift
+                ;;
+            *)
+                out_die "Unknown rc-test operand: $1. Next: ${APP_NAME} rc-test --root <dir> --file bashrc|profile --case create|modify|noop"
+                ;;
+        esac
+        shift
+    done
+
+    case "${file}" in
+        bashrc|zshrc|profile) ;;
+        *)
+            out_die "Unknown rc-test --file ${file}. Next: use bashrc, zshrc, or profile."
+            ;;
+    esac
+    case "${cas}" in
+        create|modify|noop) ;;
+        *)
+            out_die "Unknown rc-test --case ${cas}. Next: use create, modify, or noop."
+            ;;
+    esac
+
+    if [ -z "${root}" ]; then
+        root=$(mktemp -d "${TMPDIR:-/tmp}/rc-test.XXXXXX") || out_die "Could not create rc-test root."
+        created_root=1
+    fi
+    if [ ! -d "${root}" ]; then
+        mkdir -p "${root}" || out_die "Could not create rc-test --root ${root}."
+    fi
+
+    case "${file}" in
+        bashrc) dest="${root}/.bashrc"; export BASHRC="${dest}" ;;
+        zshrc) dest="${root}/.zshrc"; export ZSHRC="${dest}" ;;
+        profile) dest="${root}/.profile"; export PROFILE="${dest}" ;;
+    esac
+
+    case "${cas}" in
+        create)
+            rm -f -- "${dest}"
+            ;;
+        modify)
+            printf '%s\n' "# dongle-keep-rc-test" > "${dest}"
+            ;;
+        noop)
+            if [ "${file}" = "profile" ]; then
+                {
+                    printf '# BEGIN %s profile source-bashrc\n' "$APP_NAME"
+                    printf 'if [ -n "${BASH_VERSION:-}" ]; then\n'
+                    printf '    if [ -f "${HOME}/.bashrc" ]; then\n'
+                    printf '        . "${HOME}/.bashrc"\n'
+                    printf '    fi\n'
+                    printf 'fi\n'
+                    printf '# END %s profile source-bashrc\n' "$APP_NAME"
+                } > "${dest}"
+            else
+                {
+                    printf '# Interactive rc created by %s installer (%s)\n' "$APP_NAME" "$VERSION"
+                    printf '# Added by %s installer (%s)\n' "$APP_NAME" "$VERSION"
+                    printf '%s\n' "${path_line}"
+                } > "${dest}"
+            fi
+            ;;
+    esac
+
+    before=$(cat "${dest}" 2>/dev/null || true)
+    case "${file}" in
+        bashrc) path_add_bashrc || true ;;
+        zshrc)
+            [ -f "${dest}" ] || : > "${dest}"
+            path_add_zshrc || true
+            ;;
+        profile) path_ensure_profile || true ;;
+    esac
+    after=$(cat "${dest}" 2>/dev/null || true)
+
+    if [ -f "${real_bashrc}" ] && [ "${dest}" != "${real_bashrc}" ]; then
+        :
+    fi
+    if [ "${file}" = "bashrc" ] && [ -e "${real_bashrc}" ] && [ "${BASHRC}" != "${real_bashrc}" ]; then
+        if [ "${cas}" = "create" ] && [ ! -f "${dest}" ]; then
+            out_die "rc-test create did not write ${dest}."
+        fi
+    fi
+
+    if [ "${file}" = "zshrc" ] && [ "${cas}" = "create" ]; then
+        if [ -f "${dest}" ]; then
+            out_die "rc-test create must not invent .zshrc."
+        fi
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "out_success" "rc-test create zshrc skipped (do not invent)" \
+                "command" "rc-test" "file" "zshrc" "case" "create" "root" "${root}"
+            return 0
+        fi
+        out_plain "→ rc-test create zshrc skipped (do not invent) under ${root}"
+        return 0
+    fi
+    if [ "${cas}" = "create" ] && [ ! -f "${dest}" ]; then
+        out_die "rc-test create did not create ${dest}. Next: check --root is writable."
+    fi
+    if [ "${cas}" = "modify" ]; then
+        case "${after}" in
+            *dongle-keep-rc-test*) ;;
+            *)
+                out_die "rc-test modify lost the dongle body in ${dest}."
+                ;;
+        esac
+    fi
+    if [ "${cas}" = "noop" ] && [ "${before}" != "${after}" ]; then
+        out_die "rc-test noop changed ${dest}."
+    fi
+    if [ "${file}" != "profile" ]; then
+        case "${after}" in
+            *"${path_line}"*) ;;
+            *)
+                out_die "rc-test ${cas} missing exact PATH line in ${dest}."
+                ;;
+        esac
+    else
+        case "${after}" in
+            *'. "${HOME}/.bashrc"'*) ;;
+            *)
+                out_die "rc-test ${cas} profile does not source bashrc."
+                ;;
+        esac
+    fi
+
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "out_success" "rc-test ${cas} ${file}" \
+            "command" "rc-test" \
+            "file" "${file}" \
+            "case" "${cas}" \
+            "root" "${root}"
+        return 0
+    fi
+    out_plain "→ rc-test ${cas} ${file} under ${root}"
+    if [ "${created_root}" -eq 1 ]; then
+        out_plain "→ Created fixture root ${root} (caller may remove)"
+    fi
+    return 0
+}
+
+# =============================================================================
+# util_sha256_file() - SHA-256 hex digest of a file (portable tool chain)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Print the SHA-256 hex digest of file $1 to stdout for capture.
+# Tries sha256sum (GNU/Linux) → shasum -a 256 (macOS) → openssl dgst.
+# Return 1 if no tool or file unreadable.
+#
+# PRINTF/ECHO EXCEPTION (class B – return-via-stdout):
+# Digests are data returns for $(util_sha256_file …), not product UI.
+# =============================================================================
+
+util_sha256_file() {
+    local file="${1-}" dig=""
+    if [ -z "${file}" ] || [ ! -f "${file}" ]; then
+        return 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        dig=$(sha256sum "${file}" 2>/dev/null | awk '{ print $1; exit }')
+    elif command -v shasum >/dev/null 2>&1; then
+        dig=$(shasum -a 256 "${file}" 2>/dev/null | awk '{ print $1; exit }')
+    elif command -v openssl >/dev/null 2>&1; then
+        # openssl dgst -sha256 → "SHA256(file)= hex" or "SHA2-256(file)= hex"
+        dig=$(openssl dgst -sha256 "${file}" 2>/dev/null | awk '{ print $NF; exit }')
+    else
+        return 1
+    fi
+    if [ -z "${dig}" ]; then
+        return 1
+    fi
+    printf '%s\n' "${dig}"
+    return 0
+}
+
+# =============================================================================
+# util_fetch_remote_version() - Extract VERSION="…" from remote SCRIPT_URL body
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Download SCRIPT_URL with curl or wget and print the remote VERSION value.
+# Empty stdout on failure (caller fails loud). Class B return-via-stdout.
+# =============================================================================
+
+util_fetch_remote_version() {
+    local url="${1-}"
+    local body=""
+    if [ -z "${url}" ]; then
+        return 1
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        body=$(curl -fsSL "${url}" 2>/dev/null) || body=""
+    elif command -v wget >/dev/null 2>&1; then
+        body=$(wget -qO- "${url}" 2>/dev/null) || body=""
+    else
+        return 1
+    fi
+    if [ -z "${body}" ]; then
+        return 1
+    fi
+    printf '%s\n' "${body}" | grep '^VERSION="' | head -n1 | cut -d'"' -f2
+    return 0
+}
+
+# =============================================================================
+# util_get_install_bin_path() - Return the correct binary path to operate on
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns the full path to the ${APP_NAME} binary that should be used for
+# install/uninstall/update operations.
+#
+# Safe Variable Defaults
+#
+# Respects --force and --json.
+# Respects root vs non-root isolation, --force-user, --force-global.
+#
+# For non-root: prefers ~/.local/bin, falls back to /usr/local/bin if present.
+# For root: always uses /usr/local/bin.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is a minimal defensive helper to reduce repetition while preserving
+# the strict root/non-root separation that has been battle-field tested.
+#
+# CRITICAL: Any change here must maintain zero cross-contamination between
+# user and global installations.
+#
+# PRINTF EXCEPTION (class B – function return-via-stdout):
+# Final printf '%s' "${bin_path}" is a data return for $(…) capture — not
+# product UI. Warnings use out_warn. Callers must capture the path.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+
+util_get_install_bin_path() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    # HOME before any ${HOME}/… path (INC-20260713-001 / set -u order)
+    : "${APP_NAME:=app}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+    if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+    : "${GLOBAL_BIN:=${PREFIX}/bin}"
+else
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+fi
+    : "${HOME:=/tmp}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+
+    local bin_path=""
+
+    # Explicit force flags take precedence
+    if [ "${FORCE_USER}" -eq 1 ]; then
+        bin_path="${USER_BIN}/${APP_NAME}"
+    elif [ "${FORCE_GLOBAL}" -eq 1 ] || [ "$(id -u)" -eq 0 ]; then
+        bin_path="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        # Normal non-root behavior: prefer user-local, fallback to global
+        if [ -f "${USER_BIN}/${APP_NAME}" ]; then
+            bin_path="${USER_BIN}/${APP_NAME}"
+        elif [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            bin_path="${GLOBAL_BIN}/${APP_NAME}"
+            if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+                out_warn "Global installation found. Operating on it (you may need sudo for uninstall)."
+            fi
+        else
+            bin_path="${USER_BIN}/${APP_NAME}"
+        fi
+    fi
+
+    printf '%s' "${bin_path}"
+}
+
+# =============================================================================
+# util_backup() - Create dated backup before any modification
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Creates a dated backup of a file or directory before destructive or
+# modifying operations (rm -rf, sed, config changes).
+#
+# This implements CIAO Principle 10 (Right Backup & Restore Strategy).
+#
+# ────────────────────────────────────────────────
+# CIAO PRINCIPLES APPLIED (v2.9.1)
+# ────────────────────────────────────────────────
+# Principle 1  (Caution)               - Safe path validation
+# Principle 2  (Intentional Verbosity) - Full header + comments
+# Principle 3  (Anti-fragile)          - Survives missing files gracefully
+# Principle 7  (Reusable)              - Designed for reuse in other projects
+# Principle 9  (Safe Temporary Files)  - Uses mktemp where needed
+# Principle 10 (Backup Strategy)       - Dated backup with counter
+#
+# CRITICAL DEFENSIVE RULES:
+# - Never modify files without creating backup first.
+# - Refuse dangerous paths (/, $HOME, empty).
+# - Backup name format: <name>.YYYYMMDD-N.bak
+# - All messages go through out_text helpers only.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is the central backup mechanism. Any change must preserve dated backup
+# naming and safety checks to prevent accidental data loss.
+#
+# Last reviewed: 29 April 2026
+# =============================================================================
+
+util_backup() {
+    # --- Safe Variable Defaults ---
+    : "${APP_NAME:=app}"
+    : "${HOME:=/tmp}"
+    : "${PROJECT_NAME:=${APP_NAME}-demo}"
+    : "${PROJECT_DIR:=${HOME}/${PROJECT_NAME}}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
+    local target="${1-}"
+    local reason="${2:-pre-change}"
+
+    if [ -z "$target" ]; then
+        return 1
+    fi
+
+    # Safety check
+    if [ "$target" = "/" ] || [ "$target" = "${HOME}" ] || [ -z "$target" ]; then
+        out_warn "Refusing to backup dangerous path: $target"
+        return 1
+    fi
+
+    local timestamp
+    timestamp=$(date +%Y%m%d)
+    local counter=1
+    local backup_path
+
+    if [ -d "$target" ]; then
+        backup_path="${target}.${timestamp}-${counter}.bak"
+        while [ -e "$backup_path" ]; do
+            counter=$((counter + 1))
+            backup_path="${target}.${timestamp}-${counter}.bak"
+        done
+        cp -a "$target" "$backup_path" 2>/dev/null && \
+            out_info "Backup created: $backup_path (reason: $reason)" || \
+            out_warn "Failed to create backup of directory $target"
+    elif [ -f "$target" ]; then
+        backup_path="${target}.${timestamp}-${counter}.bak"
+        while [ -e "$backup_path" ]; do
+            counter=$((counter + 1))
+            backup_path="${target}.${timestamp}-${counter}.bak"
+        done
+        cp "$target" "$backup_path" 2>/dev/null && \
+            out_info "Backup created: $backup_path (reason: $reason)" || \
+            out_warn "Failed to create backup of file $target"
+    fi
+}
+
+# =============================================================================
+# util_try_mkdir_storage() - Fail-soft mkdir probe for one storage root
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# mkdir -p a candidate scratch/cache root, then re-test that it exists and is
+# writable. Used only by util_resolve_storage. A failed mkdir MUST NOT abort
+# the CLI — the resolver walks the next tier.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-cli-storage.md
+#
+# Last updated: 2026-09-11
+# =============================================================================
+util_try_mkdir_storage() {
+    _try_dir="${1:-}"
+    if [ -z "${_try_dir}" ]; then
+        unset _try_dir
+        return 1
+    fi
+    mkdir -p "${_try_dir}" 2>/dev/null || true
+    if [ -d "${_try_dir}" ] && [ -w "${_try_dir}" ]; then
+        unset _try_dir
+        return 0
+    fi
+    unset _try_dir
+    return 1
+}
+
+# =============================================================================
+# util_resolve_storage() - Storage resolver
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns the best available volatile storage directory for prompt files.
+# Walks a documented chain. mkdir of each leaf is fail-soft (re-test -d/-w).
+# Isolation leaf is ${APP_NAME}-${USERNAME} under the chosen cache root.
+#
+# Live chain (requirement-shell-cli-storage):
+#   1. /dev/shm/${APP_NAME}-${USERNAME}
+#   2a. Termux: ${PREFIX}/tmp/${APP_NAME}-${USERNAME}
+#   2b. Git Bash: $HOME/AppData/Local/Temp/cache/… else /c/Users/${USERNAME}/…
+#   3. $TEMP/cache/${APP_NAME}-${USERNAME}
+#   4. /tmp/cache/… else /tmp/${APP_NAME}-${USERNAME}
+#   5. STORAGE_DIR (XDG cache fallback)
+# Die only at the END if no root worked. Do not warn when leaving /dev/shm.
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution: Must work correctly when the same computer is used by multiple
+#   different users (normal user, sudo, root, shared servers, containers).
+# - Intentionality: Never allow one user's files to be readable/writable by
+#   another user. Every directory creation must be ownership-aware.
+# - Anti-fragile: Survive permission conflicts, Git Bash fake /dev/shm, and
+#   multi-user environments. mkdir fail-soft; next root.
+#
+# CRITICAL WARNING - MULTI-USER PROBLEM AI FREQUENTLY OVERLOOKS:
+# Many good applications on a computer are run by different users over time
+# (e.g. normal user → sudo → another login account).
+#
+# AI assistants often simply "add mkdir -p" when solving a storage task without
+# considering ownership and cross-user write privilege. This approach is
+# untested and problematic — it can create directories owned by one user that
+# another user cannot read/write, or allow unintended access between users.
+#
+# That is why we intentionally isolate folders per user (${APP_NAME}-${USERNAME})
+# and why any change to this function must preserve strict per-user isolation.
+# Rewriting this with a generic shared folder is forbidden and has caused
+# permission bugs in the past.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+#
+# ECHO EXCEPTION (class B – function return-via-stdout):
+# echo of storage paths is a data return for $(util_resolve_storage) capture,
+# not a product user message. Failures use out_die only after the full chain.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Lessons Learned (CIAO Reflection):
+# 2026-07-13: STORAGE_DIR was bare/unset on third fallback (INC-20260713-001 P1).
+# 2026-07-14: Third fallback uses XDG_CACHE_HOME / HOME/.cache / /tmp with
+#             per-user ${APP_NAME}-${USERNAME} isolation under set -u.
+# 2026-07-16: Create chosen tier root before echo (fail-closed) for all tiers;
+#             wire from app_main (EFFECTIVE_STORAGE_DIR + TMPDIR). SM-STOR-01.
+# 2026-09-11: Git Bash /dev/shm can look writable then mkdir fails; dying on
+#             that one leaf printed [ERROR] and skipped AppData Local Temp.
+#             mkdir is a probe (INC-20260911-001).
+#
+# Last updated: 2026-09-11
+# SSOT: requirement-shell-cli-storage.md
+# =============================================================================
+util_resolve_storage() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${USERNAME:=unknown}"
+    : "${APP_NAME:=app}"
+    : "${HOME:=/tmp}"
+    : "${XDG_CACHE_HOME:=${HOME}/.cache}"
+    : "${PREFIX:=}"
+    : "${TEMP:=}"
+
+    _leaf="${APP_NAME}-${USERNAME}"
+    _storage_candidate=""
+
+    # 1. RAM disk isolated child (fail-soft — Git Bash /dev/shm is often fake)
+    if [ -z "${_storage_candidate}" ] && [ -d "/dev/shm" ]; then
+        if util_try_mkdir_storage "/dev/shm/${_leaf}"; then
+            _storage_candidate="/dev/shm/${_leaf}"
+        fi
+    fi
+
+    # 2a. Termux this-login prefix tmp
+    if [ -z "${_storage_candidate}" ]; then
+        if key_is_termux; then
+            if util_try_mkdir_storage "${PREFIX}/tmp/${_leaf}"; then
+                _storage_candidate="${PREFIX}/tmp/${_leaf}"
+            fi
+        fi
+    fi
+
+    # 2b. Git Bash Windows user temp (parent must already exist)
+    if [ -z "${_storage_candidate}" ]; then
+        if key_is_git_bash; then
+            _gb_parent=""
+            if [ -d "${HOME}/AppData/Local/Temp" ]; then
+                _gb_parent="${HOME}/AppData/Local/Temp"
+            elif [ -d "/c/Users/${USERNAME}/AppData/Local/Temp" ]; then
+                _gb_parent="/c/Users/${USERNAME}/AppData/Local/Temp"
+            fi
+            if [ -n "${_gb_parent}" ]; then
+                if util_try_mkdir_storage "${_gb_parent}/cache/${_leaf}"; then
+                    _storage_candidate="${_gb_parent}/cache/${_leaf}"
+                fi
+            fi
+            unset _gb_parent
+        fi
+    fi
+
+    # 3. $TEMP/cache
+    if [ -z "${_storage_candidate}" ] && [ -n "${TEMP}" ] && [ -d "${TEMP}" ]; then
+        if util_try_mkdir_storage "${TEMP}/cache/${_leaf}"; then
+            _storage_candidate="${TEMP}/cache/${_leaf}"
+        fi
+    fi
+
+    # 4. /tmp/cache else /tmp isolated child
+    if [ -z "${_storage_candidate}" ] && [ -d "/tmp" ]; then
+        if util_try_mkdir_storage "/tmp/cache/${_leaf}"; then
+            _storage_candidate="/tmp/cache/${_leaf}"
+        elif util_try_mkdir_storage "/tmp/${_leaf}"; then
+            _storage_candidate="/tmp/${_leaf}"
+        fi
+    fi
+
+    # 5. Config / XDG cache (not the Git Bash volatile root when AppData exists)
+    if [ -z "${_storage_candidate}" ]; then
+        : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${_leaf}}"
+        if util_try_mkdir_storage "${STORAGE_DIR}"; then
+            _storage_candidate="${STORAGE_DIR}"
+        fi
+    fi
+
+    if [ -z "${_storage_candidate}" ]; then
+        out_die "Cannot create a writable storage folder for ${APP_NAME}. Next: set STORAGE_DIR to a writable folder and retry."
+    fi
+    echo "${_storage_candidate}"
+    unset _storage_candidate _leaf
+    return 0
+}
+
+# =============================================================================
+# util_resolve_persistent_storage() - Durable this-login folder (not /dev/shm)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# preferred-remote, download-folders, and other leaves that must survive
+# reboot live under ${HOME}/.local/${APP_NAME}, not the volatile cache chain.
+#
+# ALIGNMENT: requirement-shell-config-backup.md · requirement-shell-cli-storage.md
+# Last updated: 2026-09-11
+# =============================================================================
+util_persistent_storage_dir() {
+    : "${APP_NAME:=key-cli}"
+    : "${HOME:=/tmp}"
+    printf '%s' "${HOME}/.local/${APP_NAME}"
+}
+
+util_resolve_persistent_storage() {
+    : "${APP_NAME:=key-cli}"
+    : "${HOME:=/tmp}"
+    _persist=$(util_persistent_storage_dir)
+    case "${_persist}" in
+        */.local/bin|*/.local/bin/)
+            out_die "Persistence storage must not be the install bin directory ${_persist}"
+            ;;
+    esac
+    if ! mkdir -p "${_persist}" 2>/dev/null || [ ! -w "${_persist}" ]; then
+        out_die "Cannot create persistence storage ${_persist}"
+    fi
+    echo "${_persist}"
+    unset _persist
+    return 0
+}
+
+# =============================================================================
+# prompt_ask() - Defensive general-purpose interactive prompt with default
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Displays a message, shows current/default values if available, and waits
+# for user input. Returns the answer (or the default if user presses Enter).
+# Fully respects --quiet, --json, and non-TTY environments.
+# Uses the centralized output system (out_info / out_msg_n).
+#
+# This is the **Single Source of Truth** for all simple value prompts in the project.
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution (Principle 1): Multiple guards prevent prompting in non-interactive contexts.
+# - Intentional (Principle 2): Clear behavior for TTY vs non-TTY and quiet/JSON modes.
+# - Anti-fragile (Principle 3): Works reliably across different terminals and invocation methods.
+# - Over-protect (Principle 18): Trusts explicit INTERACTIVE=1 from caller when low-level TTY check is flaky.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly broken this by using raw printf/echo + read,
+# which violates the single output system, quiet/json handling, and TTY detection.
+#
+# PRINTF EXCEPTION (class B – function return-via-stdout only):
+# printf '%s' "${default|answer}" returns the chosen value for $(prompt_ask …)
+# capture. It is NOT the prompt UI. User-visible prompt text MUST stay on
+# out_info / out_msg_n. Do not replace those with raw printf + read.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# Last updated: 2026-09-02
+# =============================================================================
+
+prompt_ask() {
+    # --- Safe Variable Defaults ---
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${TTY:=0}"
+    : "${INTERACTIVE:=0}"
+
+    # set -u safe: missing args become empty defaults (INC-20260713-001 class)
+    local message="${1-}"
+    local default="${2-}"
+    local current="${3-}"
+
+    # Never prompt in non-interactive modes
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        printf '%s' "${default}"
+        return 0
+    fi
+
+    # Consume process TTY (measured once at startup). INTERACTIVE=1 is the
+    # documented override when low-level TTY checks are flaky.
+    if [ "${TTY}" -ne 1 ] && [ "${INTERACTIVE}" -ne 1 ]; then
+        printf '%s' "${default}"
+        return 0
+    fi
+
+    # Show current value if present
+    if [ -n "${current}" ]; then
+        out_info "Current: ${current}"
+    fi
+
+    # Show default
+    if [ -n "${default}" ]; then
+        out_info "Default: ${default}"
+    fi
+
+    out_msg_n "${message}: "
+
+    local answer=""
+    read -r answer || true
+
+    if [ -z "${answer}" ]; then
+        printf '%s' "${default}"
+    else
+        printf '%s' "${answer}"
+    fi
+}
+
+# =============================================================================
+# prompt_yes_no() - Defensive interactive yes/no confirmation prompt
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Displays a message and waits for (y/N) confirmation.
+# Returns 0 if user says yes, returns 1 (non-zero) if user says no or cancels.
+#
+# CRITICAL DEFENSIVE RULES (DO NOT VIOLATE):
+# 1. Must ALWAYS go through single source of truth (out_msg_n + out_text)
+# 2. Must respect --quiet and --json (never show prompt in those modes)
+# 3. Must NEVER use raw printf/echo for user-visible prompt text (product UI)
+#    (class-B return-via-stdout does not apply here — this helper uses exit status)
+# 4. Must work correctly in non-interactive / curl | sh environments
+# 5. Must preserve TTY detection and color handling via out_text
+# 6. This is the SINGLE SOURCE OF TRUTH for all yes/no confirmations in the project.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly replaced this kind of prompt with
+# raw printf + read, breaking consistency with out_text(), --quiet,
+# --json, TTY detection, and the overall defensive design.
+#
+# This helper exists specifically to prevent that regression and to enforce
+# CIAO-Lite principles of Caution, Intentionality, and Over-protect.
+#
+# Last updated: 2026-09-02
+# =============================================================================
+
+prompt_yes_no() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${TTY:=0}"
+
+    local message="$1"
+
+    # Never show prompt in quiet or json mode
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        return 1   # treat as "no" in non-interactive modes
+    fi
+
+    # Consume process TTY (measured once at startup; no second [ -t).
+    if [ "${TTY}" -ne 1 ]; then
+        return 1
+    fi
+
+    out_msg_n "${message} (y/N)? "
+
+    local answer=""
+    read -r answer || true
+
+    case "$answer" in
+        [Yy]*|[Yy][Ee][Ss]*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+
+# =============================================================================
+# app_about() - Display diagnostic information about the current environment
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Shows detailed diagnostic information: version, installation status (global + local),
+# current shell, TTY/interactive status, user, and helpful next steps.
+#
+# Fully respects --quiet and --json modes.
+# In JSON mode: outputs exactly ONE clean, machine-readable JSON object.
+# In quiet mode: prints nothing.
+#
+# This function provides real value to users (unlike the previous overly simple version)
+# and should be kept in sync with the overall CIAO design and README.md.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other CIAO projects.
+# Last reviewed: April 2026
+# =============================================================================
+
+# =============================================================================
+# util_get_current_shell() - Detect current / parent shell name
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns a best-effort shell command name for diagnostics (about).
+# Prefer parent shell when the current process is sh/dash/ash/the app itself.
+#
+# PRINTF EXCEPTION (class B – function return-via-stdout):
+# Final printf '%s' "$shell" (and echo fallbacks inside $(…)) are data
+# returns for capture by app_about — not product messages. Display uses out_*.
+# See requirement-shell-output-requirements.md §2.1.1.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Nested functions are not portable POSIX; this must stay top-level.
+#
+# Last reviewed: 2026-07-12
+# =============================================================================
+util_get_current_shell() {
+    local shell="unknown"
+    shell=$(ps -p $$ -o comm= 2>/dev/null | tr -d '()' || echo "unknown")
+
+    if [ "$shell" = "${APP_NAME}" ] || [ "$shell" = "sh" ] || \
+       [ "$shell" = "dash" ] || [ "$shell" = "ash" ]; then
+        local parent_pid
+        parent_pid=$(ps -p $$ -o ppid= 2>/dev/null | tr -d ' ')
+        if [ -n "$parent_pid" ]; then
+            shell=$(ps -p "$parent_pid" -o comm= 2>/dev/null | tr -d '()' || echo "$shell")
+        fi
+    fi
+    printf '%s' "$shell"
+}
+
+
+
+# =============================================================================
+# Detect helpers (prefix key_*)
+# Specialized from bootstrap origin selfmanaged (A → B only).
+# Product law: requirement-domain-key.md · requirement-shell-termux-ish.md
+# Last updated: 2026-09-04
+# =============================================================================
+
+key_is_termux() {
+    : "${PREFIX:=}"
+    if [ -n "${PREFIX}" ] && [ -d "${PREFIX}/bin" ]; then
+        case "${PREFIX}" in
+            */com.termux/*) return 0 ;;
+        esac
+    fi
+    if [ -n "${TERMUX_VERSION-}" ] || [ -d /data/data/com.termux/files/usr ]; then
+        return 0
+    fi
+    return 1
+}
+
+# =============================================================================
+# key_is_git_bash() / key_is_windows_cmd() / key_is_normal_user_only_cli()
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Termux, Git Bash (Git for Windows MSYS/MINGW), and Windows cmd (Command
+# Prompt / Windows command-line) are a command line for normal user only:
+# Type 1 (admin privilege) and Type 2 (dedicated system user privilege)
+# stay unused. Union helper covers all three instances.
+#
+# ALIGNMENT (live requirements only):
+# - requirement-shell-cli-interface.md
+# - requirement-shell-termux-ish.md
+#
+# Last updated: 2026-09-05
+# =============================================================================
+
+key_is_git_bash() {
+    case "${MSYSTEM-}" in
+        MINGW*|MSYS*|UCRT*|CLANG*) return 0 ;;
+    esac
+    _uname=$(uname -s 2>/dev/null || true)
+    case "${_uname}" in
+        MINGW*|MSYS*) return 0 ;;
+    esac
+    return 1
+}
+
+key_is_windows_cmd() {
+    if key_is_git_bash; then
+        return 1
+    fi
+    if [ -n "${WSL_DISTRO_NAME-}" ]; then
+        return 1
+    fi
+    _uname=$(uname -s 2>/dev/null || true)
+    case "${_uname}" in
+        CYGWIN*) return 1 ;;
+    esac
+    case "${OS-}" in
+        Windows_NT) return 0 ;;
+    esac
+    case "${ComSpec-}${COMSPEC-}" in
+        *[Cc][Mm][Dd].[Ee][Xx][Ee]*) return 0 ;;
+    esac
+    case "${_uname}" in
+        Linux) return 1 ;;
+    esac
+    return 1
+}
+
+key_is_normal_user_only_cli() {
+    if key_is_termux; then
+        return 0
+    fi
+    if key_is_git_bash; then
+        return 0
+    fi
+    if key_is_windows_cmd; then
+        return 0
+    fi
+    return 1
+}
+
+# Host OS display name for operator copy (not a platform class).
+# /etc/os-release NAME= first; else uname -s; else Linux.
+key_os_name() {
+    _name=""
+    if [ -r /etc/os-release ]; then
+        _name=$(grep -E '^NAME=' /etc/os-release 2>/dev/null | head -n 1 || true)
+        _name=${_name#NAME=}
+        _name=${_name#\"}
+        _name=${_name%\"}
+        _name=${_name#\'}
+        _name=${_name%\'}
+    fi
+    if [ -z "${_name}" ]; then
+        _name=$(uname -s 2>/dev/null || true)
+    fi
+    if [ -z "${_name}" ]; then
+        _name="Linux"
+    fi
+    printf '%s' "${_name}"
+    unset _name
+}
+
+# =============================================================================
+# Domain: SSH user-key backup / restore / authorized_keys (prefix key_*)
+# Product law: requirement-domain-key.md · requirement-shell-config-backup.md
+# · requirement-shell-sudoer.md · requirement-least-privilege-user.md
+# Last updated: 2026-09-14
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Detect helpers (names kept from Type 0 core: key_is_termux / git_bash / …)
+# -----------------------------------------------------------------------------
+
+key_cli_root() {
+    : "${APP_NAME:=key-cli}"
+    : "${KEY_CLI_ROOT:=/var/${APP_NAME}}"
+    printf '%s' "${KEY_CLI_ROOT}"
+}
+
+key_home_root() {
+    : "${KEY_HOME_ROOT:=/home}"
+    printf '%s' "${KEY_HOME_ROOT}"
+}
+
+key_adm_user() {
+    : "${KEY_ADM_USER:=key-adm}"
+    printf '%s' "${KEY_ADM_USER}"
+}
+
+util_sudo() {
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        "$@"
+        return $?
+    fi
+    command -v sudo >/dev/null 2>&1 || return 1
+    sudo -n "$@"
+}
+
+key_invoking_login() {
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        printf '%s' "${SUDO_USER}"
+        return 0
+    fi
+    id -un 2>/dev/null || echo "unknown"
+}
+
+key_invoking_home() {
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        _h=""
+        if command -v getent >/dev/null 2>&1; then
+            _h=$(getent passwd "${SUDO_USER}" 2>/dev/null | cut -d: -f6)
+        fi
+        if [ -z "${_h}" ] && [ -r /etc/passwd ]; then
+            _h=$(awk -F: -v u="${SUDO_USER}" '$1==u {print $6; exit}' /etc/passwd 2>/dev/null)
+        fi
+        if [ -n "${_h}" ] && [ -d "${_h}" ]; then
+            printf '%s' "${_h}"
+            unset _h
+            return 0
+        fi
+        unset _h
+    fi
+    printf '%s' "${HOME:-/tmp}"
+}
+
+key_host_normal_user_only_label() {
+    if key_is_termux; then
+        printf '%s' "termux"
+        return 0
+    fi
+    if key_is_git_bash; then
+        printf '%s' "gitbash"
+        return 0
+    fi
+    if key_is_windows_cmd; then
+        printf '%s' "windows-cmd"
+        return 0
+    fi
+    printf '%s' ""
+}
+
+key_refuse_elev_on_nuser() {
+    : "${APP_NAME:=key-cli}"
+    _lab=$(key_host_normal_user_only_label)
+    if [ -z "${_lab}" ]; then
+        unset _lab
+        return 0
+    fi
+    out_die "backup and restore are not available for ${_lab}. Next: use a POSIX Linux host."
+}
+
+key_dest_needs_elev() {
+    _d="${1:-}"
+    : "${APP_NAME:=key-cli}"
+    : "${_d:=/var/${APP_NAME}}"
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        unset _d
+        return 1
+    fi
+    case "${_d}" in
+        /var/${APP_NAME}|/var/${APP_NAME}/*)
+            unset _d
+            return 0
+            ;;
+    esac
+    if [ -d "${_d}" ] && [ -w "${_d}" ]; then
+        unset _d
+        return 1
+    fi
+    if mkdir -p "${_d}" 2>/dev/null && [ -w "${_d}" ]; then
+        unset _d
+        return 1
+    fi
+    unset _d
+    return 0
+}
+
+key_sudoers_trust_tier() {
+    : "${APP_NAME:=key-cli}"
+    : "${HOME:=/tmp}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    if [ -r "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
+        printf '%s' "production"
+        return 0
+    fi
+    if [ -r "${USER_BIN}/${APP_NAME}" ] && [ -x "${USER_BIN}/${APP_NAME}" ]; then
+        printf '%s' "test_local"
+        return 0
+    fi
+    printf '%s' "unmanaged"
+    return 0
+}
+
+key_current_login_user() {
+    id -un 2>/dev/null || echo "unknown"
+}
+
+key_sudoers_d_dir() {
+    : "${SUDOERS_D_DIR:=/etc/sudoers.d}"
+    printf '%s' "${SUDOERS_D_DIR}"
+}
+
+key_default_installed_sudoers_path() {
+    : "${APP_NAME:=key-cli}"
+    printf '%s' "$(key_sudoers_d_dir)/${APP_NAME}-$(key_current_login_user)"
+}
+
+key_default_project_sudoers_path() {
+    : "${APP_NAME:=key-cli}"
+    : "${HOME:=/tmp}"
+    printf '%s' "${HOME}/.config/${APP_NAME}/sudoers.fragment-$(key_current_login_user)"
+}
+
+key_default_sudoer_request_path() {
+    : "${APP_NAME:=key-cli}"
+    : "${HOME:=/tmp}"
+    printf '%s' "${HOME}/.config/${APP_NAME}/sudoer-request-$(key_current_login_user).json"
+}
+
+key_lpu_sudoers_path() {
+    : "${KEY_ADM_USER:=key-adm}"
+    printf '%s' "/etc/${KEY_ADM_USER}/sudoers"
+}
+
+key_sudoers_fragment_text() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    _user=$(key_current_login_user)
+    _tier=$(key_sudoers_trust_tier)
+    _global_path="${GLOBAL_BIN}/${APP_NAME}"
+    _installed=$(key_default_installed_sudoers_path)
+    _purpose="Allow ${_user} to run ${APP_NAME} backup and restore as root."
+    cat <<EOF
+# Purpose: ${_purpose}
+# ${APP_NAME} — project command only (review before install)
+# Target user: ${_user}
+# Install: sudo install -m 0440 <this-file> ${_installed}
+# Validate: sudo visudo -c -f ${_installed}
+# Trust tier: ${_tier}
+# Grant is the project command only. Does NOT allowlist mkdir/cp/chmod/chown/tar.
+# After elev, the ship unit archives ~/.ssh and chown/chmod internally.
+${_user} ALL=(root) NOPASSWD: ${_global_path} backup
+${_user} ALL=(root) NOPASSWD: ${_global_path} backup *
+${_user} ALL=(root) NOPASSWD: ${_global_path} restore *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json backup
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json backup *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json restore *
+EOF
+    unset _user _tier _global_path _installed _purpose
+}
+
+key_lpu_sudoers_fragment_text() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${KEY_ADM_USER:=key-adm}"
+    _user="${KEY_ADM_USER}"
+    _global_path="${GLOBAL_BIN}/${APP_NAME}"
+    _installed=$(key_lpu_sudoers_path)
+    cat <<EOF
+# Purpose: Allow ${_user} to backup/restore other users' .ssh and append authorized_keys as root.
+# ${APP_NAME} — key-adm F6 (review before install)
+# Target user: ${_user}
+# Install dest: ${_installed} (mode 0440 root:root)
+# Grant is the project command only. Does NOT allowlist mkdir/cp/chmod/chown/tar.
+${_user} ALL=(root) NOPASSWD: ${_global_path} backup *
+${_user} ALL=(root) NOPASSWD: ${_global_path} restore *
+${_user} ALL=(root) NOPASSWD: ${_global_path} auth-keys add *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json backup *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json restore *
+${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys add *
+EOF
+    unset _user _global_path _installed
+}
+
+key_sudoers_json_text_compact() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${SUBMIT_ACTION:=add}"
+    _user=$(key_current_login_user)
+    _global_path="${GLOBAL_BIN}/${APP_NAME}"
+    _action="${SUBMIT_ACTION}"
+    case "${_action}" in
+        add|update) ;;
+        *) _action="add" ;;
+    esac
+    printf '%s' "{\"schema_version\":1,\"purpose\":\"Allow ${_user} to run ${APP_NAME} backup and restore as root.\",\"username\":\"${_user}\",\"service\":\"${APP_NAME}\",\"action\":\"${_action}\",\"commands\":[{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"backup\"]},{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"backup\",\"*\"]},{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"restore\",\"*\"]},{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"--json\",\"backup\"]},{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"--json\",\"backup\",\"*\"]},{\"runas\":\"root\",\"tags\":[\"NOPASSWD\"],\"path\":\"${_global_path}\",\"args\":[\"--json\",\"restore\",\"*\"]}]}"
+    printf '\n'
+    unset _user _global_path _action
+}
+
+key_sudoers_refuse_forbidden_grant() {
+    _gf="${1:-}"
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    if [ -z "${_gf}" ] || [ ! -f "${_gf}" ]; then
+        out_die "sudoer grant file missing"
+    fi
+    _gb=$(cat "${_gf}" 2>/dev/null || true)
+    case "${_gb}" in
+        *"/usr/bin/mkdir"*|*"/bin/mkdir"*|*"/usr/bin/cp"*|*"/bin/cp"*|*"/usr/bin/chmod"*|*"/bin/chmod"*|*"/usr/bin/chown"*|*"/bin/chown"*|*"/usr/bin/tar"*|*"/bin/tar"*)
+            out_die "refusing sudoer grant with OS-tool commands (need ${GLOBAL_BIN}/${APP_NAME} backup/restore only)"
+            ;;
+    esac
+    unset _gf _gb
+    return 0
+}
+
+key_sudoers_verify_grant_verbs() {
+    _gf="${1:-}"
+    if [ -z "${_gf}" ] || [ ! -f "${_gf}" ]; then
+        out_die "sudoer file missing (cannot verify backup)"
+    fi
+    _gb=$(cat "${_gf}" 2>/dev/null || true)
+    case "${_gb}" in
+        *'"backup"'*) ;;
+        *) out_die "Sudoer file is incomplete: it does not allow backup. Path: ${_gf}" ;;
+    esac
+    unset _gf _gb
+    return 0
+}
+
+key_sudoers_require_emit_trust() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${ALLOW_TEST_LOCAL_SUDOERS:=0}"
+    _cmd="${1:-submit-sudoer-request}"
+    _tier=$(key_sudoers_trust_tier)
+    if [ "${_tier}" != "production" ]; then
+        if [ "${ALLOW_TEST_LOCAL_SUDOERS}" -ne 1 ]; then
+            out_die "${_cmd} trust tier is ${_tier} (not production). Prefer: sudo ${APP_NAME} install (global ${GLOBAL_BIN}/${APP_NAME}). To emit a test file: ${APP_NAME} ${_cmd} --allow-test-local  or ALLOW_TEST_LOCAL_SUDOERS=1"
+        fi
+    fi
+    unset _cmd _tier
+}
+
+key_detect_sudoer_cli() {
+    : "${HOME:=/tmp}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${SUDOER_CLI:=}"
+    if [ -n "${SUDOER_CLI}" ] && [ -x "${SUDOER_CLI}" ]; then
+        printf '%s' "${SUDOER_CLI}"
+        return 0
+    fi
+    if [ -x "${GLOBAL_BIN}/sudoer-cli" ]; then
+        printf '%s' "${GLOBAL_BIN}/sudoer-cli"
+        return 0
+    fi
+    if [ -x "${USER_BIN}/sudoer-cli" ]; then
+        printf '%s' "${USER_BIN}/sudoer-cli"
+        return 0
+    fi
+    _found=$(command -v sudoer-cli 2>/dev/null || true)
+    if [ -n "${_found}" ] && [ -x "${_found}" ]; then
+        printf '%s' "${_found}"
+        unset _found
+        return 0
+    fi
+    unset _found
+    return 1
+}
+
+key_detect_sudoer_adm() {
+    : "${SUDOER_ADM_USER:=sudoer-adm}"
+    if id "${SUDOER_ADM_USER}" >/dev/null 2>&1; then
+        printf '%s' "${SUDOER_ADM_USER}"
+        return 0
+    fi
+    return 1
+}
+
+key_detect_sudoer_inbound() {
+    : "${SUDOER_ADM_USER:=sudoer-adm}"
+    : "${SUDOER_QUEUE_INBOUND:=}"
+    : "${SUDOER_PUBLIC_ROOT:=/var/sudoer-cli}"
+    if [ -n "${SUDOER_QUEUE_INBOUND}" ] && [ -d "${SUDOER_QUEUE_INBOUND}" ]; then
+        printf '%s' "${SUDOER_QUEUE_INBOUND}"
+        return 0
+    fi
+    if [ -d "${SUDOER_PUBLIC_ROOT}/sudoer-request" ]; then
+        printf '%s' "${SUDOER_PUBLIC_ROOT}/sudoer-request"
+        return 0
+    fi
+    return 1
+}
+
+key_valid_username() {
+    _u="${1:-}"
+    case "${_u}" in
+        ""|.*|*/*|*..*|*[[:space:]]*)
+            unset _u
+            return 1
+            ;;
+    esac
+    case "${_u}" in
+        *[!a-zA-Z0-9._-]*)
+            unset _u
+            return 1
+            ;;
+    esac
+    unset _u
+    return 0
+}
+
+key_user_ssh_dir() {
+    _u="${1:-}"
+    _self=$(key_invoking_login)
+    if key_is_normal_user_only_cli && [ -n "${_u}" ] && [ "${_u}" = "${_self}" ]; then
+        printf '%s' "$(key_invoking_home)/.ssh"
+        unset _u _self
+        return 0
+    fi
+    printf '%s' "$(key_home_root)/${_u}/.ssh"
+    unset _u _self
+}
+
+# Backup a user's .ssh into KEY_CLI_ROOT before (or after) a mutate.
+# create=1: mkdir .ssh when missing so a first auth-keys add still archives.
+# create=0: no-op when .ssh is missing (restore of a new dest).
+# Nested backup must not emit a second JSON object.
+key_require_global_backup() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    local _subj _create _ssh _save_json _save_quiet
+    _subj="${1:-}"
+    _create="${2:-0}"
+    if [ -z "${_subj}" ]; then
+        out_die "Cannot take a global backup: missing username."
+    fi
+    _ssh=$(key_user_ssh_dir "${_subj}")
+    if [ ! -d "${_ssh}" ]; then
+        if [ "${_create}" -eq 1 ]; then
+            mkdir -p "${_ssh}" || out_die "Cannot create ${_ssh} before global backup. Next: ${APP_NAME} backup ${_subj}."
+            chmod 700 "${_ssh}" 2>/dev/null || true
+        else
+            unset _subj _create _ssh
+            return 0
+        fi
+    fi
+    _save_json="${JSON}"
+    _save_quiet="${QUIET}"
+    KEY_NESTED_BACKUP=1
+    export KEY_NESTED_BACKUP
+    if [ "${_save_json}" -eq 1 ]; then
+        JSON=0
+        QUIET=1
+    fi
+    key_cmd_backup "${_subj}"
+    JSON="${_save_json}"
+    QUIET="${_save_quiet}"
+    KEY_NESTED_BACKUP=0
+    export KEY_NESTED_BACKUP
+    return 0
+}
+
+key_archive_dir() {
+    _u="${1:-}"
+    printf '%s' "$(key_cli_root)/${_u}"
+    unset _u
+}
+
+key_is_key_adm_login() {
+    : "${KEY_ADM_USER:=key-adm}"
+    _who=$(key_invoking_login)
+    if [ "${_who}" = "${KEY_ADM_USER}" ]; then
+        unset _who
+        return 0
+    fi
+    unset _who
+    return 1
+}
+
+key_can_on_behalf() {
+    : "${KEY_ADM_USER:=key-adm}"
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        if [ -z "${SUDO_USER:-}" ] || [ "${SUDO_USER}" = "root" ] || [ "${SUDO_USER}" = "${KEY_ADM_USER}" ]; then
+            return 0
+        fi
+    fi
+    if key_is_key_adm_login; then
+        return 0
+    fi
+    return 1
+}
+
+key_resolve_subject() {
+    _asked="${1:-}"
+    _self=$(key_invoking_login)
+    if [ -z "${_asked}" ]; then
+        printf '%s' "${_self}"
+        unset _asked _self
+        return 0
+    fi
+    if ! key_valid_username "${_asked}"; then
+        out_die "Invalid username '${_asked}'. Use a login name with letters, digits, dot, underscore, or hyphen."
+    fi
+    if [ "${_asked}" != "${_self}" ] && ! key_can_on_behalf; then
+        out_die "Cannot act on behalf of '${_asked}'. Next: run as $(key_adm_user), or omit the username to use this login (${_self})."
+    fi
+    printf '%s' "${_asked}"
+    unset _asked _self
+}
+
+key_next_archive_path() {
+    _user="${1:-}"
+    _dir=$(key_archive_dir "${_user}")
+    _day=$(date +%Y%m%d)
+    _n=1
+    while [ -f "${_dir}/ssh-${_day}-${_n}.tar.gz" ]; do
+        _n=$((_n + 1))
+    done
+    printf '%s' "${_dir}/ssh-${_day}-${_n}.tar.gz"
+    unset _user _dir _day _n
+}
+
+key_list_archive_basenames() {
+    _dir="${1:-}"
+    if [ ! -d "${_dir}" ]; then
+        unset _dir
+        return 0
+    fi
+    _found=0
+    for _f in "${_dir}"/ssh-*.tar.gz; do
+        [ -f "${_f}" ] || continue
+        _found=1
+        printf '%s\n' "${_f##*/}"
+    done
+    unset _dir _f _found
+}
+
+key_elev_reexec() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${JSON:=0}"
+    _verb="${1:-}"
+    shift
+    _bin="${GLOBAL_BIN}/${APP_NAME}"
+    if [ ! -x "${_bin}" ]; then
+        out_die "Cannot elevate: need the global binary ${_bin}. Next: sudo sh src/${APP_NAME} install, then ${APP_NAME} generate-sudoer-request and ${APP_NAME} submit-sudoer-request."
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        out_die "sudo not found. Deposit into $(key_cli_root) needs passwordless sudo ${APP_NAME} ${_verb} after sudoer-adm approval."
+    fi
+    out_info "Elevating: sudo -n ${_bin} ${_verb}${*:+ $*}"
+    _sudo_ec=0
+    if [ "${JSON}" -eq 1 ]; then
+        util_sudo "${_bin}" --json "${_verb}" "$@" >/dev/null
+        _sudo_ec=$?
+    else
+        util_sudo "${_bin}" "${_verb}" "$@"
+        _sudo_ec=$?
+    fi
+    if [ "${_sudo_ec}" -ne 0 ]; then
+        out_die "sudo ${APP_NAME} ${_verb} was refused. Next: ${APP_NAME} generate-sudoer-request && ${APP_NAME} submit-sudoer-request, then ask sudoer-adm to approve the JSON grant (NOPASSWD ${_bin} ${_verb})."
+    fi
+    unset _verb _bin _sudo_ec
+    return 0
+}
+
+key_count_files() {
+    _p="${1:-}"
+    if [ ! -d "${_p}" ]; then
+        printf '%s' "0"
+        unset _p
+        return 0
+    fi
+    _n=$(find "${_p}" -type f 2>/dev/null | wc -l | tr -d ' ')
+    printf '%s' "${_n:-0}"
+    unset _p _n
+}
+
+key_cmd_backup() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    # local: nested backup from add/restore must not unset the caller's _subject/_src.
+    local _subject _src _dest_root _dest_dir _outp _stage _parent _base
+    local _src_files _members _size _owner
+    key_refuse_elev_on_nuser
+    _subject=$(key_resolve_subject "${1:-}")
+    _src=$(key_user_ssh_dir "${_subject}")
+    _dest_root=$(key_cli_root)
+    _dest_dir=$(key_archive_dir "${_subject}")
+    if [ ! -d "${_src}" ]; then
+        out_die "Cannot backup: missing ${_src}. Next: create that login's .ssh folder, then ${APP_NAME} backup ${_subject}."
+    fi
+    if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ] && key_dest_needs_elev "${_dest_root}"; then
+        if [ -n "${1:-}" ]; then
+            key_elev_reexec backup "${_subject}"
+        else
+            key_elev_reexec backup
+        fi
+        if [ "${JSON}" -eq 1 ] && [ "${KEY_NESTED_BACKUP:-0}" -ne 1 ]; then
+            out_json "backup" "ok" \
+                "app" "${APP_NAME}" \
+                "user" "${_subject}" \
+                "source" "${_src}" \
+                "destination_dir" "${_dest_dir}" \
+                "elevated" "true"
+        fi
+        unset _subject _src _dest_root _dest_dir
+        return 0
+    fi
+    command -v tar >/dev/null 2>&1 || out_die "tar not found. Next: install tar, then ${APP_NAME} backup."
+    if [ ! -d "${_dest_dir}" ]; then
+        mkdir -p "${_dest_dir}" || out_die "Cannot create ${_dest_dir} (need allowlisted sudo ${APP_NAME} backup). Next: ${APP_NAME} generate-sudoer-request && ${APP_NAME} submit-sudoer-request."
+    fi
+    if [ ! -w "${_dest_dir}" ]; then
+        out_die "Cannot write ${_dest_dir}. Only an approved passwordless sudo ${APP_NAME} backup may push archives there."
+    fi
+    _outp=$(key_next_archive_path "${_subject}")
+    _stage=$(mktemp -t "${APP_NAME}.ssh.XXXXXX") || out_die "Could not create a stage archive."
+    _parent=$(dirname -- "${_src}")
+    _base=$(basename -- "${_src}")
+    if [ ! -d "${_parent}" ]; then
+        rm -f "${_stage}"
+        out_die "Cannot backup: missing parent ${_parent}."
+    fi
+    if ! tar -C "${_parent}" -czf "${_stage}" "${_base}"; then
+        rm -f "${_stage}"
+        out_die "tar failed for ${_src}."
+    fi
+    if command -v install >/dev/null 2>&1; then
+        install -m 0600 "${_stage}" "${_outp}" || { rm -f "${_stage}"; out_die "Failed to deposit ${_outp}."; }
+    else
+        cp "${_stage}" "${_outp}" || { rm -f "${_stage}"; out_die "Failed to deposit ${_outp}."; }
+        chmod 0600 "${_outp}" 2>/dev/null || true
+    fi
+    rm -f "${_stage}"
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        chown root:root "${_outp}" 2>/dev/null || true
+        chmod 0600 "${_outp}" 2>/dev/null || true
+        chown root:root "${_dest_dir}" 2>/dev/null || true
+        chmod 0750 "${_dest_dir}" 2>/dev/null || true
+        chown root:root "${_dest_root}" 2>/dev/null || true
+        chmod 0755 "${_dest_root}" 2>/dev/null || true
+    fi
+    _src_files=$(key_count_files "${_src}")
+    _members=$(tar -tzf "${_outp}" 2>/dev/null | wc -l | tr -d ' ')
+    _size=$(wc -c < "${_outp}" 2>/dev/null | tr -d ' ')
+    _owner="invoking-user"
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        _owner="root:root"
+    fi
+    KEY_LAST_BACKUP_PATH="${_outp}"
+    export KEY_LAST_BACKUP_PATH
+    out_success "Backup complete: ${_src} → ${_outp}"
+    out_info "Verified: source_files=${_src_files} members=${_members:-0} size=${_size:-0} owner=${_owner}"
+    if [ "${JSON}" -eq 1 ] && [ "${KEY_NESTED_BACKUP:-0}" -ne 1 ]; then
+        out_json "backup" "ok" \
+            "app" "${APP_NAME}" \
+            "user" "${_subject}" \
+            "source" "${_src}" \
+            "destination" "${_outp}" \
+            "source_files" "${_src_files}" \
+            "archive_members" "${_members:-0}" \
+            "archive_size" "${_size:-0}" \
+            "owner" "${_owner}" \
+            "verified" "true"
+    fi
+    return 0
+}
+
+key_resolve_archive() {
+    _user="${1:-}"
+    _token="${2:-}"
+    _dir=$(key_archive_dir "${_user}")
+    if [ -z "${_token}" ]; then
+        unset _user _token _dir
+        return 1
+    fi
+    case "${_token}" in
+        */*)
+            unset _user _token _dir
+            return 1
+            ;;
+    esac
+    if [ -f "${_dir}/${_token}" ]; then
+        printf '%s' "${_dir}/${_token}"
+        unset _user _token _dir
+        return 0
+    fi
+    if [ -f "${_dir}/${_token}.tar.gz" ]; then
+        printf '%s' "${_dir}/${_token}.tar.gz"
+        unset _user _token _dir
+        return 0
+    fi
+    _match=""
+    _n=0
+    for _f in "${_dir}"/ssh-*.tar.gz; do
+        [ -f "${_f}" ] || continue
+        _b=${_f##*/}
+        case "${_b}" in
+            "${_token}"*)
+                _match="${_f}"
+                _n=$((_n + 1))
+                ;;
+        esac
+    done
+    if [ "${_n}" -eq 1 ] && [ -n "${_match}" ]; then
+        printf '%s' "${_match}"
+        unset _user _token _dir _match _n _f _b
+        return 0
+    fi
+    unset _user _token _dir _match _n _f _b
+    return 1
+}
+
+key_cmd_restore() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${FORCE:=0}"
+    key_refuse_elev_on_nuser
+    _a1="${1:-}"
+    _a2="${2:-}"
+    _self=$(key_invoking_login)
+    _subject=""
+    _token=""
+    if [ "${_a1}" = "list" ]; then
+        _subject=$(key_resolve_subject "${_a2}")
+        _dir=$(key_archive_dir "${_subject}")
+        _n=0
+        _names=""
+        for _b in $(key_list_archive_basenames "${_dir}"); do
+            _n=$((_n + 1))
+            if [ -z "${_names}" ]; then
+                _names="${_b}"
+            else
+                _names="${_names} ${_b}"
+            fi
+            if [ "${JSON}" -eq 0 ]; then
+                out_plain "${_n}. ${_b}"
+            fi
+        done
+        if [ "${_n}" -eq 0 ]; then
+            out_info "No archives for ${_subject} under ${_dir}."
+        fi
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "restore-list" "ok" "user" "${_subject}" "count" "${_n}" "archives" "${_names}"
+        fi
+        unset _a1 _a2 _self _subject _token _dir _n _names _b
+        return 0
+    fi
+    if [ -n "${_a1}" ] && [ -n "${_a2}" ]; then
+        _subject=$(key_resolve_subject "${_a1}")
+        _token="${_a2}"
+    elif [ -n "${_a1}" ]; then
+        case "${_a1}" in
+            ssh-*.tar.gz|ssh-*)
+                _subject="${_self}"
+                _token="${_a1}"
+                ;;
+            *)
+                _subject=$(key_resolve_subject "${_a1}")
+                ;;
+        esac
+    else
+        _subject="${_self}"
+    fi
+    _src=$(key_user_ssh_dir "${_subject}")
+    _dest_root=$(key_cli_root)
+    _dest_dir=$(key_archive_dir "${_subject}")
+    if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ] && key_dest_needs_elev "${_dest_root}"; then
+        if [ -n "${_a2}" ]; then
+            key_elev_reexec restore "${_subject}" "${_token}"
+        elif [ -n "${_a1}" ]; then
+            key_elev_reexec restore "${_a1}"
+        else
+            key_elev_reexec restore
+        fi
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "restore" "ok" "user" "${_subject}" "elevated" "true"
+        fi
+        unset _a1 _a2 _self _subject _token _src _dest_root _dest_dir
+        return 0
+    fi
+    if [ -z "${_token}" ]; then
+        if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+            _n=0
+            for _b in $(key_list_archive_basenames "${_dest_dir}"); do
+                _n=$((_n + 1))
+                eval "_arch_${_n}=\"${_b}\""
+            done
+            if [ "${_n}" -eq 0 ]; then
+                out_die "No archives for ${_subject} under ${_dest_dir}. Next: ${APP_NAME} backup ${_subject}."
+            fi
+            while true; do
+                out_info "Archives for ${_subject}:"
+                _i=1
+                while [ "${_i}" -le "${_n}" ]; do
+                    eval "_b=\${_arch_${_i}}"
+                    out_plain "${_i}. ${_b}"
+                    _i=$((_i + 1))
+                done
+                out_plain "0. Back"
+                out_msg_n "Choose an archive number: "
+                _choice=""
+                read -r _choice || true
+                case "${_choice}" in
+                    0|q|exit|"") unset _a1 _a2 _self _subject _token _src _dest_root _dest_dir _n _b _choice _i; return 0 ;;
+                esac
+                case "${_choice}" in
+                    *[!0-9]*)
+                        out_warn "Unknown restore choice '${_choice}'. Choose a number from the list."
+                        continue
+                        ;;
+                esac
+                if [ "${_choice}" -lt 1 ] || [ "${_choice}" -gt "${_n}" ]; then
+                    out_warn "Unknown restore choice '${_choice}'. Choose a number from the list."
+                    continue
+                fi
+                eval "_token=\${_arch_${_choice}}"
+                break
+            done
+        else
+            out_die "restore needs an archive name. Next: ${APP_NAME} restore list ${_subject}, then ${APP_NAME} restore ${_subject} ssh-YYYYMMDD-N.tar.gz"
+        fi
+    fi
+    _arch=$(key_resolve_archive "${_subject}" "${_token}") || out_die "Archive not found: ${_token} under ${_dest_dir}. Next: ${APP_NAME} restore list ${_subject}."
+    if [ ! -r "${_arch}" ]; then
+        out_die "Cannot read ${_arch}."
+    fi
+    command -v tar >/dev/null 2>&1 || out_die "tar not found. Next: install tar, then ${APP_NAME} restore."
+    _parent=$(dirname -- "${_src}")
+    if [ ! -d "${_parent}" ]; then
+        out_die "Cannot restore: missing home parent ${_parent}."
+    fi
+    if [ -d "${_src}" ] && [ "${FORCE}" -ne 1 ]; then
+        _existing=$(key_count_files "${_src}")
+        if [ "${_existing}" -gt 0 ]; then
+            if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+                if ! prompt_yes_no "Replace existing ${_src}?"; then
+                    out_info "Restore cancelled."
+                    unset _a1 _a2 _self _subject _token _src _dest_root _dest_dir _arch _parent _existing
+                    return 0
+                fi
+            else
+                out_die "Refusing to overwrite non-empty ${_src}. Next: re-run with --force."
+            fi
+        fi
+    fi
+    if [ -d "${_src}" ]; then
+        key_require_global_backup "${_subject}" 0
+    fi
+    mkdir -p "${_parent}" || out_die "Cannot create ${_parent}."
+    tar -C "${_parent}" -xzf "${_arch}" || out_die "tar extract failed for ${_arch}."
+    if [ -d "${_src}" ]; then
+        chmod 0700 "${_src}" 2>/dev/null || true
+        if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+            if command -v getent >/dev/null 2>&1; then
+                _grp=$(getent passwd "${_subject}" 2>/dev/null | cut -d: -f4)
+            else
+                _grp=""
+            fi
+            if [ -n "${_grp}" ]; then
+                chown -R "${_subject}:${_grp}" "${_src}" 2>/dev/null || chown -R "${_subject}" "${_src}" 2>/dev/null || true
+            else
+                chown -R "${_subject}" "${_src}" 2>/dev/null || true
+            fi
+        fi
+    fi
+    out_success "Restore complete: ${_arch} → ${_src}"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "restore" "ok" \
+            "app" "${APP_NAME}" \
+            "user" "${_subject}" \
+            "archive" "${_arch}" \
+            "destination" "${_src}"
+    fi
+    unset _a1 _a2 _self _subject _token _src _dest_root _dest_dir _arch _parent _existing _grp _n _choice _b
+    return 0
+}
+
+key_auth_keys_path() {
+    _u="${1:-}"
+    printf '%s' "$(key_user_ssh_dir "${_u}")/authorized_keys"
+    unset _u
+}
+
+key_cmd_auth_keys() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    _sub="${1:-list}"
+    _a2="${2-}"
+    _a3="${3-}"
+    _self=$(key_invoking_login)
+    _subject="${_self}"
+    _file=""
+    case "${_sub}" in
+        list|"")
+            if [ -n "${_a2}" ]; then
+                _subject=$(key_resolve_subject "${_a2}")
+            fi
+            _dir=$(key_user_ssh_dir "${_subject}")
+            _path=$(key_auth_keys_path "${_subject}")
+            if [ "${_subject}" != "${_self}" ] && [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+                key_elev_reexec auth-keys list "${_subject}"
+                unset _sub _a2 _a3 _self _subject _file _dir _path
+                return 0
+            fi
+            if [ ! -f "${_path}" ]; then
+                if [ "${JSON}" -eq 1 ]; then
+                    out_json "auth-keys" "" "path" "${_path}" "user" "${_subject}" "count" "0"
+                else
+                    out_info "No authorized_keys file yet at ${_path}."
+                    out_info "Add one with: ${APP_NAME} auth-keys add /path/to/id_ed25519.pub"
+                fi
+                unset _sub _a2 _a3 _self _subject _file _dir _path
+                return 0
+            fi
+            _count=$(grep -cve '^[[:space:]]*$' "${_path}" 2>/dev/null || echo 0)
+            if [ "${JSON}" -eq 1 ]; then
+                out_json "auth-keys" "" "path" "${_path}" "user" "${_subject}" "count" "${_count}"
+            else
+                out_info "authorized_keys (${_path}): ${_count} line(s)"
+                grep -v '^[[:space:]]*$' "${_path}" 2>/dev/null | while IFS= read -r _line; do
+                    out_plain "  ${_line}"
+                done
+            fi
+            unset _sub _a2 _a3 _self _subject _file _dir _path _count
+            return 0
+            ;;
+        add)
+            if [ -n "${_a3}" ]; then
+                _subject=$(key_resolve_subject "${_a2}")
+                _file="${_a3}"
+            else
+                _file="${_a2}"
+                _subject="${_self}"
+            fi
+            if [ -z "${_file}" ]; then
+                if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+                    out_msg_n "public-key file: "
+                    read -r _file || true
+                fi
+            fi
+            if [ -z "${_file}" ]; then
+                out_die "auth-keys add needs a public-key file path. Example: ${APP_NAME} auth-keys add ./id_ed25519.pub"
+            fi
+            if [ ! -f "${_file}" ] || [ ! -r "${_file}" ]; then
+                out_die "Cannot read public-key file: ${_file}"
+            fi
+            if [ "${_subject}" != "${_self}" ] && [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+                key_elev_reexec auth-keys add "${_subject}" "${_file}"
+                unset _sub _a2 _a3 _self _subject _file
+                return 0
+            fi
+            _dir=$(key_user_ssh_dir "${_subject}")
+            _path=$(key_auth_keys_path "${_subject}")
+            key_require_global_backup "${_subject}" 1
+            mkdir -p "${_dir}" || out_die "Could not create ${_dir}."
+            chmod 700 "${_dir}" 2>/dev/null || true
+            _key=$(grep -E '^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp|sk-ssh-)' "${_file}" | head -n 1 || true)
+            if [ -z "${_key}" ]; then
+                out_die "No SSH public key line found in ${_file}."
+            fi
+            touch "${_path}" || out_die "Could not create ${_path}."
+            chmod 600 "${_path}" 2>/dev/null || true
+            if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ] && [ "${_subject}" != "root" ]; then
+                chown "${_subject}" "${_dir}" "${_path}" 2>/dev/null || true
+            fi
+            if grep -Fqx "${_key}" "${_path}" 2>/dev/null; then
+                if [ "${JSON}" -eq 1 ]; then
+                    out_json "out_success" "Key already present." "path" "${_path}" "user" "${_subject}" "backup" "${KEY_LAST_BACKUP_PATH:-}"
+                else
+                    out_success "That key is already in ${_path}."
+                fi
+                unset _sub _a2 _a3 _self _subject _file _dir _path _key
+                return 0
+            fi
+            printf '%s\n' "${_key}" >> "${_path}" || out_die "Could not append to ${_path}."
+            key_require_global_backup "${_subject}" 0
+            if [ "${JSON}" -eq 1 ]; then
+                out_json "out_success" "Key added." "path" "${_path}" "user" "${_subject}" "backup" "${KEY_LAST_BACKUP_PATH:-}"
+            else
+                out_success "Added the key to ${_path}."
+            fi
+            unset _sub _a2 _a3 _self _subject _file _dir _path _key
+            return 0
+            ;;
+        *)
+            out_die "Unknown auth-keys action '${_sub}'. Use list or add <pubkey-file> (optional user for $(key_adm_user) on-behalf)."
+            ;;
+    esac
+}
+
+key_cmd_print_sudoers() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${ALLOW_TEST_LOCAL_SUDOERS:=0}"
+    key_refuse_elev_on_nuser
+    _out_path="${1:-}"
+    _tier=$(key_sudoers_trust_tier)
+    _global_path="${GLOBAL_BIN:-/usr/local/bin}/${APP_NAME}"
+    if [ "${_tier}" != "production" ]; then
+        if [ "${ALLOW_TEST_LOCAL_SUDOERS}" -ne 1 ]; then
+            out_die "print-sudoers trust tier is ${_tier} (not production). Prefer: sudo ${APP_NAME} install (global ${_global_path}). To emit a test fragment anyway: ${APP_NAME} print-sudoers --allow-test-local [path] or ALLOW_TEST_LOCAL_SUDOERS=1"
+        fi
+        if [ "${JSON}" -eq 0 ]; then
+            out_warn "TEST MODE ONLY: trust tier=${_tier}. Prefer global install for production."
+        fi
+    fi
+    _installed=$(key_default_installed_sudoers_path)
+    _fragment=$(key_sudoers_fragment_text)
+    if [ -n "${_out_path}" ]; then
+        _dir=$(dirname -- "${_out_path}")
+        if [ ! -d "${_dir}" ]; then
+            mkdir -p "${_dir}" || out_die "Cannot create ${_dir}"
+        fi
+        printf '%s\n' "${_fragment}" > "${_out_path}" || out_die "Cannot write ${_out_path}"
+        out_success "Wrote sudoers fragment to ${_out_path}"
+        out_info "Admin: sudo visudo -c -f ${_out_path}"
+        out_info "Admin: sudo install -m 0440 ${_out_path} ${_installed}"
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "print-sudoers" "written" \
+                "path" "${_out_path}" \
+                "installed_path" "${_installed}" \
+                "trust_tier" "${_tier}"
+        fi
+        unset _out_path _tier _global_path _installed _fragment _dir
+        return 0
+    fi
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "print-sudoers" "use human mode or path arg to capture fragment" \
+            "installed_path" "${_installed}" \
+            "trust_tier" "${_tier}"
+        unset _out_path _tier _global_path _installed _fragment
+        return 0
+    fi
+    out_info "Sudoers fragment for $(key_current_login_user) → ${_global_path} backup/restore (trust_tier=${_tier})"
+    out_plain "${_fragment}"
+    out_info "Tip: ${APP_NAME} print-sudoers $(key_default_project_sudoers_path)"
+    unset _out_path _tier _global_path _installed _fragment
+    return 0
+}
+
+key_cmd_generate_sudoer_request() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${HOME:=/tmp}"
+    : "${SUBMIT_ACTION:=add}"
+    key_refuse_elev_on_nuser
+    key_sudoers_require_emit_trust "generate-sudoer-request"
+    _out_path="${1:-}"
+    if [ -z "${_out_path}" ]; then
+        _out_path=$(key_default_sudoer_request_path)
+    fi
+    case "${_out_path}" in
+        /etc|/etc/*)
+            out_die "generate-sudoer-request refuses to write under /etc (Type 0). Use a path under \$HOME or /dev/shm."
+            ;;
+        /var/sudoer-cli|/var/sudoer-cli/*)
+            out_die "generate-sudoer-request does not write inbound. Write a local file, then: ${APP_NAME} submit-sudoer-request <path>"
+            ;;
+    esac
+    _dir=$(dirname -- "${_out_path}")
+    if [ ! -d "${_dir}" ]; then
+        mkdir -p "${_dir}" || out_die "Cannot create ${_dir}"
+    fi
+    key_sudoers_json_text_compact >"${_out_path}" || out_die "Cannot write ${_out_path}"
+    chmod 0644 "${_out_path}" 2>/dev/null || true
+    key_sudoers_refuse_forbidden_grant "${_out_path}"
+    key_sudoers_verify_grant_verbs "${_out_path}"
+    out_success "Wrote verified sudoer file to ${_out_path}"
+    out_info "Grant allows: ${APP_NAME} backup and restore (action=${SUBMIT_ACTION})"
+    out_info "Review the file, then: ${APP_NAME} submit-sudoer-request ${_out_path}"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "generate-sudoer-request" "written" \
+            "path" "${_out_path}" \
+            "action" "${SUBMIT_ACTION}" \
+            "user" "$(key_current_login_user)"
+    fi
+    unset _out_path _dir
+    return 0
+}
+
+key_cmd_submit_sudoer_request() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    key_refuse_elev_on_nuser
+    _src_file="${1:-}"
+    _cli=""
+    if _cli=$(key_detect_sudoer_cli); then
+        :
+    else
+        out_die "sudoer-cli not found (set SUDOER_CLI or install sudoer-cli). Submit is Type 0 compose — this CLI does not write /etc. Next: ${APP_NAME} generate-sudoer-request, then install sudoer-cli, then ${APP_NAME} submit-sudoer-request."
+    fi
+    _adm=""
+    if _adm=$(key_detect_sudoer_adm); then
+        :
+    else
+        out_die "sudoer-adm not found (id ${SUDOER_ADM_USER:-sudoer-adm} failed). Ask an admin to run: sudo sudoer-cli setup"
+    fi
+    _inbound=""
+    if _inbound=$(key_detect_sudoer_inbound); then
+        :
+    else
+        out_die "sudoer inbound queue not found (preferred /var/sudoer-cli/sudoer-request). Ask an admin to run: sudo sudoer-cli setup"
+    fi
+    if [ ! -w "${_inbound}" ]; then
+        out_die "sudoer inbound not writable: ${_inbound}."
+    fi
+    _tmp=""
+    _cleanup_tmp=0
+    if [ -n "${_src_file}" ]; then
+        if [ ! -f "${_src_file}" ]; then
+            out_die "sudoers file not found: ${_src_file}"
+        fi
+        _tmp="${_src_file}"
+    else
+        key_sudoers_require_emit_trust "submit-sudoer-request"
+        _tmp=$(mktemp -t "${APP_NAME}.sudoer.XXXXXX") || out_die "Could not create a temp sudoer file."
+        key_sudoers_json_text_compact >"${_tmp}" || out_die "cannot write temp sudoer JSON ${_tmp}"
+        _cleanup_tmp=1
+    fi
+    key_sudoers_refuse_forbidden_grant "${_tmp}"
+    key_sudoers_verify_grant_verbs "${_tmp}"
+    _purpose="${SUBMIT_PURPOSE:-Allow $(key_current_login_user) to run ${APP_NAME} backup and restore as root.}"
+    _verb="add-sudoer-request"
+    if [ "${SUBMIT_ACTION}" = "update" ]; then
+        _verb="update-sudoer-request"
+    fi
+    _errf=$(mktemp -t "${APP_NAME}.sudoer-err.XXXXXX") || _errf="/dev/null"
+    _out=""
+    _rc=0
+    if [ "${JSON}" -eq 1 ]; then
+        _out=$("${_cli}" --json "${_verb}" --file "${_tmp}" --purpose "${_purpose}" --service "${APP_NAME}" 2>"${_errf}")
+        _rc=$?
+    else
+        _out=$("${_cli}" "${_verb}" --file "${_tmp}" --purpose "${_purpose}" --service "${APP_NAME}" 2>"${_errf}")
+        _rc=$?
+    fi
+    _err=$(cat "${_errf}" 2>/dev/null || true)
+    if [ "${_errf}" != "/dev/null" ]; then
+        rm -f "${_errf}"
+    fi
+    if [ "${_cleanup_tmp}" -eq 1 ]; then
+        rm -f "${_tmp}"
+    fi
+    if [ "${_rc}" -ne 0 ]; then
+        if [ -n "${_err}" ]; then
+            out_die "sudoer-cli ${_verb} failed: ${_err}"
+        fi
+        out_die "sudoer-cli ${_verb} failed (exit ${_rc})"
+    fi
+    out_success "Submitted sudoer request via ${_cli} (${_verb})"
+    if [ -n "${_out}" ] && [ "${JSON}" -eq 0 ]; then
+        out_plain "${_out}"
+    fi
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "submit-sudoer-request" "submitted" \
+            "action" "${SUBMIT_ACTION}" \
+            "service" "${APP_NAME}" \
+            "sudoer_cli" "${_cli}" \
+            "sudoer_adm" "${_adm}"
+    fi
+    unset _src_file _cli _adm _inbound _tmp _cleanup_tmp _purpose _verb _errf _out _rc _err
+    return 0
+}
+
+key_cmd_print_sudoers_install_script() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    key_refuse_elev_on_nuser
+    key_sudoers_require_emit_trust "print-sudoers-install-script"
+    _out="${1:-}"
+    if [ -z "${_out}" ]; then
+        _out="${TMPDIR:-/tmp}/${APP_NAME}-$(key_current_login_user)-sudoers-admin.sh"
+    fi
+    _installed=$(key_default_installed_sudoers_path)
+    _draft=$(key_default_project_sudoers_path)
+    key_cmd_print_sudoers "${_draft}"
+    cat > "${_out}" <<EOF
+#!/bin/sh
+# Generated by: ${APP_NAME} print-sudoers-install-script
+set -u
+PROJECT_SUDOERS_FILE="${_draft}"
+INSTALLED="${_installed}"
+die() { printf '%s\\n' "\$*" >&2; exit 1; }
+info() { printf '%s\\n' "\$*"; }
+[ "\$(id -u)" -eq 0 ] || die "run as root: sudo sh \$0 install|uninstall|replace"
+[ -f "\${PROJECT_SUDOERS_FILE}" ] || die "Missing project sudoers file: \${PROJECT_SUDOERS_FILE} — regenerate with: ${APP_NAME} print-sudoers --allow-test-local \${PROJECT_SUDOERS_FILE}"
+cmd="\${1:-install}"
+case "\${cmd}" in
+    install|replace)
+        visudo -c -f "\${PROJECT_SUDOERS_FILE}" || die "visudo -c failed"
+        install -m 0440 "\${PROJECT_SUDOERS_FILE}" "\${INSTALLED}" || die "install failed"
+        visudo -c -f "\${INSTALLED}" || die "installed fragment failed visudo -c"
+        info "Installed \${INSTALLED}"
+        ;;
+    uninstall)
+        rm -f "\${INSTALLED}"
+        info "Removed \${INSTALLED}"
+        ;;
+    *) die "use install|uninstall|replace" ;;
+esac
+EOF
+    chmod 0755 "${_out}" 2>/dev/null || true
+    out_success "Wrote admin script ${_out}"
+    out_info "Admin: sudo sh ${_out} install"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "print-sudoers-install-script" "written" \
+            "path" "${_out}" \
+            "installed_path" "${_installed}"
+    fi
+    unset _out _installed _draft
+    return 0
+}
+
+key_cmd_remove_project_sudoers() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    key_refuse_elev_on_nuser
+    _path="${1:-}"
+    if [ -z "${_path}" ]; then
+        _path=$(key_default_project_sudoers_path)
+    fi
+    case "${_path}" in
+        /etc|/etc/*)
+            out_die "Refusing to remove paths under /etc as Type 0. This command only deletes the user draft. Host elev is admin-only: ${APP_NAME} print-sudoers-install-script && sudo sh <script> uninstall"
+            ;;
+    esac
+    if [ ! -f "${_path}" ]; then
+        out_die "No project-sudoers draft at ${_path}."
+    fi
+    rm -f "${_path}" || out_die "Could not remove ${_path}."
+    out_success "Removed project-sudoers draft ${_path}"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "remove-project-sudoers" "removed" "path" "${_path}"
+    fi
+    unset _path
+    return 0
+}
+
+key_cmd_sudoers_menu() {
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
+        out_die "sudoers menu needs a terminal. Next: ${APP_NAME} generate-sudoer-request"
+    fi
+    while true; do
+        out_info "$(printf '%s' "${APP_NAME}") — sudoers (grant and drafts)"
+        out_menu_choice "141" "generate-sudoer-request" "Write a JSON grant you can read"
+        out_menu_choice "142" "submit-sudoer-request" "Queue the JSON grant inbound"
+        out_menu_choice "143" "print-sudoers" "Emit sudoers draft"
+        out_menu_choice "144" "print-sudoers-install-script" "Write admin install script"
+        out_menu_choice "145" "remove-project-sudoers" "Remove sudoers draft only"
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _sc=""
+        read -r _sc || true
+        case "${_sc}" in
+            141|generate-sudoer-request) key_cmd_generate_sudoer_request; break ;;
+            142|submit-sudoer-request) key_cmd_submit_sudoer_request; break ;;
+            143|print-sudoers) key_cmd_print_sudoers; break ;;
+            144|print-sudoers-install-script) key_cmd_print_sudoers_install_script; break ;;
+            145|remove-project-sudoers) key_cmd_remove_project_sudoers; break ;;
+            0|q|exit|"") break ;;
+            *)
+                out_warn "Unknown sudoers choice '${_sc}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+    unset _sc
+}
+
+key_cmd_setup() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${KEY_ADM_USER:=key-adm}"
+    : "${KEY_ADM_UID:=1666}"
+    : "${KEY_ADM_GID:=1666}"
+    : "${KEY_ADM_HOME:=/etc/key-adm}"
+    : "${KEY_ADM_SHELL:=/bin/bash}"
+    if key_is_normal_user_only_cli; then
+        out_die "setup is not available for $(key_host_normal_user_only_label). Next: use a POSIX Linux host as root."
+    fi
+    if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+        out_die "Creating ${KEY_ADM_USER} needs a root login. Next: re-run as root: ${APP_NAME} setup"
+    fi
+    if ! command -v useradd >/dev/null 2>&1; then
+        out_die "useradd not found. Next: install passwd/shadow-utils, then ${APP_NAME} setup."
+    fi
+    if id "${KEY_ADM_USER}" >/dev/null 2>&1; then
+        out_info "Account ${KEY_ADM_USER} already exists."
+    else
+        if command -v getent >/dev/null 2>&1; then
+            if getent passwd "${KEY_ADM_UID}" >/dev/null 2>&1; then
+                out_die "UID ${KEY_ADM_UID} is already in use. Next: free that UID or set KEY_ADM_UID."
+            fi
+            if getent group "${KEY_ADM_GID}" >/dev/null 2>&1; then
+                out_die "GID ${KEY_ADM_GID} is already in use. Next: free that GID or set KEY_ADM_GID."
+            fi
+        fi
+        if command -v groupadd >/dev/null 2>&1; then
+            groupadd -g "${KEY_ADM_GID}" "${KEY_ADM_USER}" || out_die "groupadd ${KEY_ADM_USER} failed."
+        fi
+        useradd -u "${KEY_ADM_UID}" -g "${KEY_ADM_GID}" -d "${KEY_ADM_HOME}" -s "${KEY_ADM_SHELL}" -m "${KEY_ADM_USER}" \
+            || out_die "useradd ${KEY_ADM_USER} failed."
+        out_success "Created ${KEY_ADM_USER} (UID ${KEY_ADM_UID}, home ${KEY_ADM_HOME})."
+    fi
+    mkdir -p "${KEY_ADM_HOME}" || out_die "Cannot create ${KEY_ADM_HOME}."
+    chown "${KEY_ADM_USER}:${KEY_ADM_USER}" "${KEY_ADM_HOME}" 2>/dev/null || true
+    chmod 0750 "${KEY_ADM_HOME}" 2>/dev/null || true
+    _root=$(key_cli_root)
+    mkdir -p "${_root}" || out_die "Cannot create ${_root}."
+    chown root:root "${_root}" 2>/dev/null || true
+    chmod 0755 "${_root}" 2>/dev/null || true
+    _f6=$(key_lpu_sudoers_path)
+    _f6dir=$(dirname -- "${_f6}")
+    mkdir -p "${_f6dir}" || out_die "Cannot create ${_f6dir}."
+    _tmp=$(mktemp -t "${APP_NAME}.lpu-sudoers.XXXXXX") || out_die "Could not stage F6 sudoers."
+    key_lpu_sudoers_fragment_text >"${_tmp}" || out_die "Cannot write F6 draft."
+    if command -v visudo >/dev/null 2>&1; then
+        visudo -c -f "${_tmp}" || { rm -f "${_tmp}"; out_die "visudo -c failed for ${_f6} draft."; }
+    fi
+    install -m 0440 -o root -g root "${_tmp}" "${_f6}" || { rm -f "${_tmp}"; out_die "Cannot install ${_f6}."; }
+    rm -f "${_tmp}"
+    _inc="$(key_sudoers_d_dir)/${KEY_ADM_USER}"
+    _incdir=$(dirname -- "${_inc}")
+    if [ -d "${_incdir}" ]; then
+        printf '#include %s\n' "${_f6}" > "${_inc}.tmp" || out_die "Cannot write include drop-in."
+        if command -v visudo >/dev/null 2>&1; then
+            visudo -c -f "${_inc}.tmp" || { rm -f "${_inc}.tmp"; out_die "visudo -c failed for ${_inc}."; }
+        fi
+        install -m 0440 -o root -g root "${_inc}.tmp" "${_inc}" || { rm -f "${_inc}.tmp"; out_die "Cannot install ${_inc}."; }
+        rm -f "${_inc}.tmp"
+        out_info "Installed include ${_inc} → ${_f6}"
+    else
+        out_warn "No ${_incdir}; F6 is at ${_f6}. Next: add #include ${_f6} to sudoers as root."
+    fi
+    out_success "setup complete: ${KEY_ADM_USER} can sudo ${APP_NAME} backup/restore/auth-keys add on behalf of other users."
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "setup" "ok" \
+            "lpu" "${KEY_ADM_USER}" \
+            "uid" "${KEY_ADM_UID}" \
+            "home" "${KEY_ADM_HOME}" \
+            "sudoers" "${_f6}"
+    fi
+    unset _root _f6 _f6dir _tmp _inc _incdir
+    return 0
+}
+
+key_cmd_remove_lpu() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${FORCE:=0}"
+    : "${KEY_ADM_USER:=key-adm}"
+    if key_is_normal_user_only_cli; then
+        out_die "remove-lpu is not available for $(key_host_normal_user_only_label)."
+    fi
+    if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
+        out_die "Removing ${KEY_ADM_USER} needs a root login. Next: re-run as root: ${APP_NAME} remove-lpu"
+    fi
+    if [ "${FORCE}" -ne 1 ]; then
+        if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+            if ! prompt_yes_no "Remove least-privilege user ${KEY_ADM_USER}?"; then
+                out_info "remove-lpu cancelled."
+                return 0
+            fi
+        else
+            out_die "remove-lpu needs --force when not on a TTY."
+        fi
+    fi
+    _f6=$(key_lpu_sudoers_path)
+    _inc="$(key_sudoers_d_dir)/${KEY_ADM_USER}"
+    _bak_root=$(key_cli_root)/lpu-remove
+    mkdir -p "${_bak_root}" 2>/dev/null || true
+    _day=$(date +%Y%m%d)
+    if [ -f "${_f6}" ]; then
+        cp "${_f6}" "${_bak_root}/sudoers-${KEY_ADM_USER}-${_day}.bak" 2>/dev/null || true
+        rm -f "${_f6}"
+    fi
+    if [ -f "${_inc}" ]; then
+        rm -f "${_inc}"
+    fi
+    if id "${KEY_ADM_USER}" >/dev/null 2>&1; then
+        userdel -r "${KEY_ADM_USER}" || out_die "userdel -r ${KEY_ADM_USER} failed."
+    fi
+    if command -v groupdel >/dev/null 2>&1; then
+        groupdel "${KEY_ADM_USER}" 2>/dev/null || true
+    fi
+    out_success "Removed ${KEY_ADM_USER}. Archives under $(key_cli_root) were kept."
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "remove-lpu" "ok" "lpu" "${KEY_ADM_USER}"
+    fi
+    unset _f6 _inc _bak_root _day
+    return 0
+}
+
+key_menu_show_on_behalf() {
+    if key_is_normal_user_only_cli; then
+        return 1
+    fi
+    if key_can_on_behalf; then
+        return 0
+    fi
+    return 1
+}
+
+key_menu_typed_leaf() {
+    case "${_choice}" in
+        backup) key_cmd_backup; return 0 ;;
+        restore) key_cmd_restore; return 0 ;;
+        auth-keys) key_cmd_auth_keys list; return 0 ;;
+        sudoers) key_cmd_sudoers_menu; return 0 ;;
+        generate-sudoer-request) key_cmd_generate_sudoer_request; return 0 ;;
+        submit-sudoer-request) key_cmd_submit_sudoer_request; return 0 ;;
+        print-sudoers) key_cmd_print_sudoers; return 0 ;;
+        print-sudoers-install-script) key_cmd_print_sudoers_install_script; return 0 ;;
+        remove-project-sudoers) key_cmd_remove_project_sudoers; return 0 ;;
+        setup) key_cmd_setup; return 0 ;;
+        remove-lpu) key_cmd_remove_lpu; return 0 ;;
+        install) inst_perform_install; return 0 ;;
+        version) app_about; return 0 ;;
+        about) app_about; return 0 ;;
+        version-check) ver_check; return 0 ;;
+        self-update) inst_self_update; return 0 ;;
+        self-uninstall) inst_self_uninstall; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+key_cmd_menu_keys() {
+    _show_elev=1
+    if key_is_normal_user_only_cli; then
+        _show_elev=0
+    fi
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*) — keys"
+        if [ "${_show_elev}" -eq 0 ]; then
+            out_info "backup and restore not available for $(key_host_normal_user_only_label)"
+        fi
+        if [ "${_show_elev}" -eq 1 ]; then
+            out_menu_choice "11" "backup" "archive this login ~/.ssh into /var/${APP_NAME}"
+            out_menu_choice "12" "restore" "extract an archive back into this login ~/.ssh"
+        fi
+        out_menu_choice "13" "auth-keys" "this login authorized_keys (add takes a global backup first)"
+        if [ "${_show_elev}" -eq 1 ]; then
+            out_menu_choice "14" "sudoers" "grant and drafts for passwordless sudo"
+        fi
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice _show_elev
+            return 0
+        fi
+        case "${_choice}" in
+            11|backup)
+                if [ "${_show_elev}" -eq 1 ]; then
+                    key_cmd_backup
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            12|restore)
+                if [ "${_show_elev}" -eq 1 ]; then
+                    key_cmd_restore
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            13|auth-keys) key_cmd_auth_keys; continue ;;
+            14)
+                if [ "${_show_elev}" -eq 1 ]; then
+                    key_cmd_sudoers_menu
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            sudoers)
+                if [ "${_show_elev}" -eq 1 ]; then
+                    key_cmd_sudoers_menu
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            0|q|"")
+                unset _choice _show_elev
+                return 0
+                ;;
+            *)
+                if key_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+key_cmd_menu_on_behalf() {
+    if ! key_menu_show_on_behalf; then
+        out_info "on-behalf features are not available except as $(key_adm_user) (or root)"
+        return 0
+    fi
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*) — on-behalf"
+        out_menu_choice "21" "backup" "archive another user's ~/.ssh using sudo"
+        out_menu_choice "22" "restore" "restore another user's ~/.ssh using sudo"
+        out_menu_choice "23" "auth-keys" "append authorized_keys for another user (global backup first, then sudo)"
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice
+            return 0
+        fi
+        case "${_choice}" in
+            21|backup)
+                out_msg_n "username to backup: "
+                _u=""
+                read -r _u || true
+                if [ -n "${_u}" ]; then
+                    key_cmd_backup "${_u}"
+                fi
+                unset _u
+                continue
+                ;;
+            22|restore)
+                out_msg_n "username to restore: "
+                _u=""
+                read -r _u || true
+                if [ -n "${_u}" ]; then
+                    key_cmd_restore "${_u}"
+                fi
+                unset _u
+                continue
+                ;;
+            23|auth-keys)
+                out_msg_n "username for authorized_keys: "
+                _u=""
+                read -r _u || true
+                out_msg_n "public-key file: "
+                _f=""
+                read -r _f || true
+                if [ -n "${_u}" ] && [ -n "${_f}" ]; then
+                    key_cmd_auth_keys add "${_u}" "${_f}"
+                fi
+                unset _u _f
+                continue
+                ;;
+            0|q|"")
+                unset _choice
+                return 0
+                ;;
+            *)
+                if key_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+key_cmd_menu_self() {
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*) — self-management"
+        out_menu_choice "81" "install" "place ${APP_NAME}; ensure rc PATH"
+        out_menu_choice "82" "version" "show version and detailed diagnostics (about)"
+        out_menu_choice "83" "about" "show detailed diagnostics"
+        out_menu_choice "84" "version-check" "compare local vs remote version"
+        out_menu_choice "85" "self-update" "update ${APP_NAME} to a newer remote version"
+        out_menu_choice "86" "self-uninstall" "remove ${APP_NAME} (safe PATH cleanup)"
+        out_plain "0. Back"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice
+            return 0
+        fi
+        case "${_choice}" in
+            81|install) inst_perform_install; continue ;;
+            82|version) app_about; continue ;;
+            83|about) app_about; continue ;;
+            84|version-check) ver_check; continue ;;
+            85|self-update) inst_self_update; continue ;;
+            86|self-uninstall) inst_self_uninstall; continue ;;
+            0|q|"")
+                unset _choice
+                return 0
+                ;;
+            *)
+                if key_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+key_cmd_menu() {
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -ne 1 ]; then
+        out_die "menu needs a terminal. Run a named command instead, for example: ${APP_NAME} backup"
+    fi
+    while true; do
+        out_info "**${APP_NAME}**(*${VERSION}*)"
+        out_menu_choice "1" "keys" "this login ~/.ssh backup, restore, authorized_keys"
+        if key_menu_show_on_behalf; then
+            out_menu_choice "2" "on-behalf" "as key-adm: backup/restore/auth-keys for other users"
+        elif ! key_is_normal_user_only_cli; then
+            out_info "on-behalf features are not available except as $(key_adm_user)"
+        fi
+        out_menu_choice "8" "self-management" "this CLI install, version, update, uninstall"
+        out_plain "9. Exit"
+        out_msg_n "Choose a number, or type the command name: "
+        _choice=""
+        if ! read -r _choice; then
+            unset _choice
+            return 0
+        fi
+        case "${_choice}" in
+            1|keys) key_cmd_menu_keys; continue ;;
+            2|on-behalf)
+                if key_menu_show_on_behalf; then
+                    key_cmd_menu_on_behalf
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+            8|self-management) key_cmd_menu_self; continue ;;
+            9|exit|q|"")
+                unset _choice
+                return 0
+                ;;
+            *)
+                if key_menu_typed_leaf; then
+                    continue
+                fi
+                out_warn "Unknown menu choice '${_choice}'. Choose a number from the list, or type the command name."
+                continue
+                ;;
+        esac
+    done
+}
+
+app_about() {
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${APP_NAME:=key-cli}"
+    : "${VERSION:=2.0.2}"
+    if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
+        : "${GLOBAL_BIN:=${PREFIX}/bin}"
+    else
+        : "${GLOBAL_BIN:=/usr/local/bin}"
+    fi
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${SCRIPT_URL:=}"
+    : "${USERNAME:=unknown}"
+    : "${HOME:=/tmp}"
+    : "${XDG_CACHE_HOME:=${HOME}/.cache}"
+    if [ -z "${EFFECTIVE_STORAGE_DIR:-}" ]; then
+        EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)
+    fi
+    : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"
+    _root=$(key_cli_root)
+    _adm=$(key_adm_user)
+    _adm_present="false"
+    if id "${_adm}" >/dev/null 2>&1; then
+        _adm_present="true"
+    fi
+    if [ "${JSON}" -eq 1 ]; then
+        local installed="false"
+        inst_is_installed && installed="true"
+        local global_ver="not found"
+        if [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            global_ver=$(grep '^VERSION="' "${GLOBAL_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        fi
+        local local_ver="not found"
+        if [ -x "${USER_BIN}/${APP_NAME}" ]; then
+            local_ver=$(grep '^VERSION="' "${USER_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        fi
+        local current_shell
+        current_shell=$(util_get_current_shell)
+        local interactive="false"
+        [ -t 1 ] && interactive="true"
+        local current_user
+        current_user="$(id -un 2>/dev/null || echo "unknown")"
+        out_json "about" "" \
+            "app" "${APP_NAME}" \
+            "version" "${VERSION}" \
+            "installed" "${installed}" \
+            "global_version" "${global_ver}" \
+            "local_version" "${local_ver}" \
+            "shell" "${current_shell}" \
+            "interactive" "${interactive}" \
+            "user" "${current_user}" \
+            "effective_storage" "${EFFECTIVE_STORAGE_DIR}" \
+            "storage_dir" "${STORAGE_DIR}" \
+            "key_cli_root" "${_root}" \
+            "key_adm" "${_adm}" \
+            "key_adm_present" "${_adm_present}"
+        unset _root _adm _adm_present
+        return 0
+    fi
+    [ "${QUIET}" -eq 1 ] && return 0
+    out_info "=== ${APP_NAME} ${VERSION} - About / Diagnostics ==="
+    out_empty_line
+    if inst_is_installed; then
+        out_success "${APP_NAME} is properly installed."
+    else
+        out_warn "${APP_NAME} is NOT installed in your PATH."
+        if [ -n "${SCRIPT_URL}" ]; then
+            out_info "   Recommended: curl -fsSL ${SCRIPT_URL} | sh"
+        else
+            out_info "   Set SCRIPT_URL to the install script URL, then: curl -fsSL \"\${SCRIPT_URL}\" | sh"
+        fi
+    fi
+    out_empty_line
+    if [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
+        global_ver=$(grep '^VERSION="' "${GLOBAL_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        out_info "Global install  (${GLOBAL_BIN}/${APP_NAME}):   ${global_ver}"
+    else
+        out_info "Global install  (${GLOBAL_BIN}/${APP_NAME}):   not found"
+    fi
+    if [ -x "${USER_BIN}/${APP_NAME}" ]; then
+        local_ver=$(grep '^VERSION="' "${USER_BIN}/${APP_NAME}" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        out_info "Local install   (${USER_BIN}/${APP_NAME}):    ${local_ver}"
+    else
+        out_info "Local install   (${USER_BIN}/${APP_NAME}):    not found"
+    fi
+    out_empty_line
+    local current_user
+    current_user="$(id -un 2>/dev/null || echo "unknown")"
+    out_info "Current user:      ${current_user}"
+    if [ "$(id -u)" -eq 0 ]; then
+        out_success "Execution context: root (global install path available)"
+    else
+        out_info "Execution context: this login (no root required for this CLI)"
+    fi
+    out_empty_line
+    local current_shell
+    current_shell=$(util_get_current_shell)
+    out_info "Current shell:     ${current_shell}"
+    if [ -t 1 ]; then
+        out_info "TTY / Interactive: yes"
+    else
+        out_info "TTY / Interactive: no (non-interactive / scripted mode)"
+    fi
+    out_empty_line
+    out_info "Storage (effective): ${EFFECTIVE_STORAGE_DIR}"
+    out_info "Storage (fallback config field): ${STORAGE_DIR}"
+    out_empty_line
+    out_info "key store:         ${_root}/<username>/ssh-YYYYMMDD-N.tar.gz"
+    out_info "key-adm account:   ${_adm} (present=${_adm_present})"
+    out_empty_line
+    out_info "Useful commands:"
+    out_info "   ${APP_NAME} help           → Full usage"
+    out_info "   ${APP_NAME} backup         → Archive this login ~/.ssh"
+    out_info "   ${APP_NAME} restore        → Extract a dated archive"
+    out_info "   ${APP_NAME} self-update    → Update to latest version"
+    out_info "   ${APP_NAME} --json         → Machine-readable output"
+    out_empty_line
+    out_info "Run '${APP_NAME} help' for complete usage information."
+    unset _root _adm _adm_present
+}
+
+app_version() {
+    : "${APP_NAME:=key-cli}"
+    : "${VERSION:=2.0.2}"
+    : "${JSON:=0}"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "version" "" "app" "${APP_NAME}" "version" "${VERSION}"
+    else
+        out_info "${APP_NAME} version ${VERSION}"
+    fi
+}
+
+app_help() {
+    : "${SHORT_DESCRIPTION:=${APP_DESC:-Backup and restore SSH user keys}}"
+    : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli, restore it, and (as key-adm) do the same on behalf of other users.}"
+    if [ "${JSON}" -eq 1 ]; then
+        out_json "success" "Help text available in human-readable mode. Run without --json." \
+            "command" "help" \
+            "note" "Use --json with version, about, version-check, install, self-update, self-uninstall, rc-test."
+        return 0
+    fi
+    if [ "${QUIET}" -eq 1 ]; then
+        return 0
+    fi
+    out_info "${APP_NAME} — ${SHORT_DESCRIPTION}"
+    out_plain "${DESCRIPTION}"
+    out_empty_line
+    out_info "Usage:"
+    out_plain "  ${APP_NAME} [command] [options]"
+    out_empty_line
+    out_info "Self-management (this login):"
+    out_plain "  install              Place ${APP_NAME}; ensure rc PATH"
+    out_plain "  version              Show current version (TTY menu 82 runs about)"
+    out_plain "  about                Show detailed diagnostics"
+    out_plain "  version-check        Compare local vs remote version (needs SCRIPT_URL)"
+    out_plain "  self-update          Update ${APP_NAME} to a newer remote version"
+    out_plain "  self-uninstall       Remove ${APP_NAME} (safe PATH cleanup)"
+    out_plain "  help                 Show this help"
+    out_empty_line
+    out_info "Domain commands (SSH user keys):"
+    out_plain "  backup [user]        Archive /home/<user>/.ssh to /var/${APP_NAME}/<user>/ssh-YYYYMMDD-N.tar.gz (sudo; root:root)"
+    out_plain "  restore list [user]  List dated archives for that user"
+    out_plain "  restore [user] [archive]  Extract an archive back into /home/<user>/.ssh"
+    out_plain "  auth-keys [list|add [user] <file>]  List or add authorized_keys; add always takes a global ~/.ssh backup first"
+    out_plain "  setup                Root: create key-adm and F6 sudoers"
+    out_plain "  remove-lpu           Root: remove key-adm (keeps /var/${APP_NAME} archives)"
+    out_plain "  print-sudoers        Emit project-sudoers-file (draft) for admin install"
+    out_plain "  print-sudoers-install-script  Write admin script for sudo install/uninstall/replace"
+    out_plain "  generate-sudoer-request [path]  Independently write a JSON grant (backup/restore verbs)"
+    out_plain "  submit-sudoer-request [file]  Queue a JSON sudoers-grant request via sudoer-cli"
+    out_plain "  remove-project-sudoers [path]  Delete project-sudoers-file draft only"
+    out_plain "  menu                 Numbered tree: 1 keys, 2 on-behalf (key-adm), 8 self-management, 9 Exit. Submenus 0 Back. Alias: main"
+    out_empty_line
+    out_info "Tests (local folder; not install):"
+    out_plain "  rc-test              Prove PATH/profile ensure in --root tmp (--file bashrc|profile --case create|modify|noop). Does not write this login's real ~/.bashrc"
+    out_empty_line
+    out_info "Global Options:"
+    out_plain "  --quiet, -q          Suppress info/success (errors and warnings still shown)"
+    out_plain "  --json               Machine-readable JSON (implies --quiet)"
+    out_plain "  --force              Force reinstall / skip uninstall confirm / allow restore overwrite"
+    out_plain "  --debug              Debug diagnostics on stderr"
+    out_empty_line
+    : "${REPO_USER:=cloudgen}"
+    : "${REPO_NAME:=key-cli}"
+    : "${SCRIPT_URL:=}"
+    : "${HOME:=/tmp}"
+    : "${BASHRC:=${HOME}/.bashrc}"
+    out_info "Environment:"
+    out_plain "  REPO_USER            ${REPO_USER}"
+    out_plain "                       GitHub owner used to compose default SCRIPT_URL"
+    out_plain "  REPO_NAME            ${REPO_NAME}"
+    out_plain "                       GitHub repo used to compose default SCRIPT_URL"
+    if [ -n "${SCRIPT_URL}" ]; then
+        out_plain "  SCRIPT_URL           ${SCRIPT_URL}"
+    else
+        out_plain "  SCRIPT_URL           (not set)"
+    fi
+    out_plain "                       Canonical install channel (override via env; needed for version-check/self-update)"
+    out_plain "  BASHRC               ${BASHRC}"
+    out_plain "                       Interactive rc written by install PATH ensure (default \${HOME}/.bashrc; override for tests/CI)"
+    out_plain "  KEY_CLI_ROOT         durable store (default /var/${APP_NAME})"
+    out_plain "  KEY_HOME_ROOT        parent of <user>/.ssh (default /home)"
+    out_plain "  KEY_ADM_USER         least-privilege operator (default key-adm)"
+    out_empty_line
+}
+
+app_main() {
+    : "${COMMAND:=help}"
+    : "${DOMAIN_OPERANDS:=}"
+    : "${RC_TEST_OPERANDS:=}"
+    : "${QUIET:=0}"
+    : "${JSON:=0}"
+    : "${DEBUG:=0}"
+    : "${FORCE:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${USERNAME:=unknown}"
+    : "${HOME:=/tmp}"
+    : "${XDG_CACHE_HOME:=${HOME}/.cache}"
+    : "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"
+    EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)
+    export EFFECTIVE_STORAGE_DIR STORAGE_DIR
+    export TMPDIR="${EFFECTIVE_STORAGE_DIR}"
+
+    if [ $# -eq 0 ]; then
+        if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+            key_cmd_menu
+            exit $?
+        fi
+        if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+            inst_perform_install
+            exit $?
+        elif inst_is_installed; then
+            inst_perform_install
+            exit $?
+        else
+            inst_maybe_install
+            exit $?
+        fi
+    fi
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --quiet|-q) QUIET=1 ;;
+            --json)     JSON=1; QUIET=1 ;;
+            --debug)    DEBUG=1 ;;
+            --force)    FORCE=1; FORCE_REINSTALL=1 ;;
+            --allow-test-local)
+                ALLOW_TEST_LOCAL_SUDOERS=1
+                export ALLOW_TEST_LOCAL_SUDOERS
+                ;;
+            --update)
+                SUBMIT_ACTION="update"
+                SUBMIT_ACTION_EXPLICIT=1
+                export SUBMIT_ACTION SUBMIT_ACTION_EXPLICIT
+                ;;
+            --add)
+                SUBMIT_ACTION="add"
+                SUBMIT_ACTION_EXPLICIT=1
+                export SUBMIT_ACTION SUBMIT_ACTION_EXPLICIT
+                ;;
+            --purpose)
+                if [ $# -lt 2 ]; then
+                    out_die "--purpose requires TEXT"
+                fi
+                SUBMIT_PURPOSE="$2"
+                export SUBMIT_PURPOSE
+                shift
+                ;;
+            version|about|help|version-check|self-update|self-uninstall|install|rc-test)
+                COMMAND="$1"
+                ;;
+            backup|restore|auth-keys|menu|main|setup|remove-lpu|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers)
+                case "${COMMAND}" in
+                    backup|restore|auth-keys|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers|setup|remove-lpu)
+                        _op="$1"
+                        if [ -n "${DOMAIN_OPERANDS}" ]; then
+                            DOMAIN_OPERANDS="${DOMAIN_OPERANDS} ${_op}"
+                        else
+                            DOMAIN_OPERANDS="${_op}"
+                        fi
+                        unset _op
+                        ;;
+                    *)
+                        COMMAND="$1"
+                        ;;
+                esac
+                ;;
+            *)
+                case "${COMMAND}" in
+                    rc-test)
+                        if [ -n "${RC_TEST_OPERANDS}" ]; then
+                            RC_TEST_OPERANDS="${RC_TEST_OPERANDS} $1"
+                        else
+                            RC_TEST_OPERANDS="$1"
+                        fi
+                        ;;
+                    backup|restore|auth-keys|print-sudoers|print-sudoers-install-script|generate-sudoer-request|submit-sudoer-request|remove-project-sudoers|setup|remove-lpu)
+                        _op="$1"
+                        if [ -n "${DOMAIN_OPERANDS}" ]; then
+                            DOMAIN_OPERANDS="${DOMAIN_OPERANDS} ${_op}"
+                        else
+                            DOMAIN_OPERANDS="${_op}"
+                        fi
+                        unset _op
+                        ;;
+                    *)
+                        out_die "Unknown command or flag: $1. See '${APP_NAME} help'."
+                        ;;
+                esac
+                ;;
+        esac
+        shift
+    done
+
+    out_debug "dispatch command=${COMMAND} quiet=${QUIET} json=${JSON} force=${FORCE}"
+
+    case "${COMMAND}" in
+        version)
+            app_version
+            ;;
+        about)
+            app_about
+            ;;
+        version-check)
+            ver_check
+            ;;
+        self-update)
+            inst_self_update
+            ;;
+        self-uninstall)
+            inst_self_uninstall
+            ;;
+        install)
+            inst_perform_install
+            ;;
+        rc-test)
+            # shellcheck disable=SC2086
+            set -- ${RC_TEST_OPERANDS}
+            path_rc_test "$@"
+            ;;
+        backup)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_backup "${1-}"
+            ;;
+        restore)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_restore "${1-}" "${2-}"
+            ;;
+        auth-keys)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_auth_keys "${1:-list}" "${2-}" "${3-}"
+            ;;
+        menu|main) key_cmd_menu ;;
+        setup) key_cmd_setup ;;
+        remove-lpu) key_cmd_remove_lpu ;;
+        print-sudoers)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_print_sudoers "${1-}"
+            ;;
+        print-sudoers-install-script)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_print_sudoers_install_script "${1-}"
+            ;;
+        generate-sudoer-request)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_generate_sudoer_request "${1-}"
+            ;;
+        submit-sudoer-request)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_submit_sudoer_request "${1-}"
+            ;;
+        remove-project-sudoers)
+            set -- ${DOMAIN_OPERANDS}
+            key_cmd_remove_project_sudoers "${1-}"
+            ;;
+        help|*)
+            app_help
+            ;;
+    esac
+}
+
+# =============================================================================
+# BOOTSTRAP
+# =============================================================================
+#
+# Always invoke the single dispatcher. Do NOT gate on ${0##*/} matching APP_NAME:
+# under curl | sh / stdin pipe, $0 is the shell (sh/bash/…), not the product
+# filename — a basename gate causes silent no-op and breaks one-liner install.
+# Product law: requirement-shell-cli-zero-arguments.md (TTY menu / non-TTY install) +
+# requirement-shell-cli-interface.md (single app_main entry).
+#
+# Single-file install CLI: source-as-library is unsupported; main always runs.
+# =============================================================================
+app_main "$@"

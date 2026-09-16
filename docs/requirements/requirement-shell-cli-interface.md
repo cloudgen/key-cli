@@ -4,20 +4,20 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for the **POSIX shell CLI interface** of the sshd-cli tool: command surface, privilege typing, global flags, dispatcher behavior, output modes, and interactive vs non-interactive rules.
+This requirement is the **project Single Source of Truth** for the **POSIX shell CLI interface** of the key-cli tool: command surface, privilege typing, global flags, dispatcher behavior, output modes, and interactive vs non-interactive rules.
 
-It defines a **normal user privilege** (workshop **Type 0**) **self-managed shell CLI** (install / update / uninstall of the tool itself). It does **not** invent **admin privilege** (Type 1) host-bootstrap or **dedicated system user privilege** (Type 2) app-ops commands unless a future requirement adds them.
+It defines a **normal user privilege** (workshop **Type 0**) **self-managed shell CLI** (install / update / uninstall of the tool itself). Type 1 is the studied `sudo key-cli backup` grant. Type 2 is **key-adm**.
 
 **Scope:** User-facing command names, flags, dispatch, privilege labels, and mode contracts.  
 **Out of scope (own requirements when specialized):** Online-install checksum mechanics detail, self-management safety beyond the command surface, shell coding style, full output-function catalog (cited, not re-owned).
 
 ### 1.1 Human-facing
 
-**In one sentence:** This file lists the **words you type** (`version`, `help`, `install`, `status`, `start`, …), the flags (`--quiet`, `--json`, `--force`), and that **you run them as this login** — no in-tool `sudo`, no dedicated `sshd-adm` account.
+**In one sentence:** This file lists the **words you type** (`version`, `help`, `install`, `backup`, `restore`, …), the flags (`--quiet`, `--json`, `--force`), and that **you run them as this login** — with a narrow `sudo key-cli backup` grant and optional **key-adm** on-behalf.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | The person who types the command | `sshd-cli help` · `sshd-cli version` |
+| You / this login | The person who types the command | `key-cli help` · `key-cli version` |
 | The other role | Empty argv (install-ensure) and lifecycle safety | `requirement-shell-cli-zero-arguments.md` · `requirement-shell-self-management.md` |
 | Not this file | Checksum, storage paths, `out_*` internals | Peer requirements |
 
@@ -28,13 +28,13 @@ It defines a **normal user privilege** (workshop **Type 0**) **self-managed shel
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli help` | Command | Listed verbs and flags |
-| `./sshd-cli` | Program file | Dispatcher |
+| `key-cli help` | Command | Listed verbs and flags |
+| `./key-cli` | Program file | Dispatcher |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| See the menu | Help lists install, version, about, self-update, self-uninstall, and flags. An unknown word is an error, not a silent no-op. | `sshd-cli help` |
-| Ask for JSON | Same verbs; structured objects; no human banners. | `sshd-cli --json version` |
+| See the menu | Help lists install, version, about, self-update, self-uninstall, backup, restore, and flags. An unknown word is an error, not a silent no-op. | `key-cli help` |
+| Ask for JSON | Same verbs; structured objects; no human banners. | `key-cli --json version` |
 
 ---
 
@@ -48,14 +48,14 @@ Every CIAO-Lite shell CLI **MUST** expose a documented command set. Commands **M
 |----------|-----------|---------|-------------------|
 | **Type 0 – Normal user privilege – Self-management / CLI lifecycle** | Invoking user (no elevation required for user-owned install) | Manage the CLI binary and diagnostics | `version`, `about`, `help`, `version-check`, `self-update`, `self-uninstall` |
 | **Type 0 – Normal user privilege – Install CLI binary** | Invoking user (root → global path; non-root → user path) | First-time or explicit placement of the CLI | `install`; **non-interactive** empty argv **Type O install-ensure** — `requirement-shell-cli-zero-arguments.md` |
-| **Type 1 – Admin privilege – Host preparation** | Elevated (internal escalation when designed) | Passwordless `sudo sshd-cli backup-config` into `/var/sshd-cli` after sudoer-adm | *Used for `backup-config` deposit on POSIX Linux. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
-| **Type 2 – Dedicated system user privilege – App ops under system user** | Dedicated least-privilege system user | App install/configure/runtime under app identity | *Unused on this product. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
+| **Type 1 – Admin privilege – Host preparation** | Elevated (internal escalation when designed) | Passwordless `sudo key-cli backup` / `restore` into `/var/key-cli` after sudoer-adm; root `setup` | *Used for deposit and LPU create on POSIX Linux. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
+| **Type 2 – Dedicated system user privilege – App ops under system user** | Dedicated least-privilege system user | On-behalf backup / auth-keys as **key-adm** | *Used: `key-adm`. On a command line for normal user only (Termux, Git Bash, Windows cmd) MUST stay unused — do not implement/enable.* |
 
 **Execution rules (core):**
 
 1. Type 0 commands **MUST** run as the invoker without requiring a dedicated system user.
-2. Type 1 on this product is **only** the studied `sudo -n {{GLOBAL_BIN}}/sshd-cli backup-config` grant (`requirement-shell-sudoer` · `requirement-shell-config-backup`). Type 2 is **unused**. **MUST NOT** add other Type 1 verbs without updating those requirements.  
-3. When the ship unit detects a **command line for normal user only** (Termux, Git Bash, Windows cmd): Type 1 and Type 2 **MUST** stay unused. **MUST NOT** implement or enable in-tool `sudo`, wrap `apt`/`dnf`/`yum`, create a dedicated system user, or recommend `sudo curl | sh` as the install path. Helpers: `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-termux-ish` (Termux detect / `pkg`).
+2. Type 1 on this product is the studied `sudo -n {{GLOBAL_BIN}}/key-cli backup` / `restore` grant (`requirement-shell-sudoer` · `requirement-shell-config-backup`) plus root `setup`. Type 2 is **key-adm** (`requirement-least-privilege-user`). **MUST NOT** add other Type 1 verbs without updating those requirements.  
+3. When the ship unit detects a **command line for normal user only** (Termux, Git Bash, Windows cmd): Type 1 and Type 2 **MUST** stay unused. **MUST NOT** implement or enable in-tool `sudo`, wrap `apt`/`dnf`/`yum`, create a dedicated system user, or recommend `sudo curl | sh` as the install path. Helpers: `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-termux-ish`.
 4. Privilege type for each command **MUST** be documented in help and in this requirement’s Implementation Notes.
 
 ### 2.2 Global flags (portable)
@@ -109,7 +109,7 @@ In JSON mode, help **MUST NOT** dump long human text; return a short structured 
 5. Global options  
 6. Environment / channel vars (never `CHECKSUM` on help)
 
-Ship-unit injection anchors (comments in `./sshd-cli`): `DOMAIN_HELP_ROWS`, `DOMAIN_ABOUT_FIELDS`, `DOMAIN_DISPATCH_FLAGS`, `DOMAIN_DISPATCH_COMMANDS`, `DOMAIN_DISPATCH_ROUTES`.
+Ship-unit injection anchors (comments in `./key-cli`): `DOMAIN_HELP_ROWS`, `DOMAIN_ABOUT_FIELDS`, `DOMAIN_DISPATCH_FLAGS`, `DOMAIN_DISPATCH_COMMANDS`, `DOMAIN_DISPATCH_ROUTES`.
 
 ### 2.5.1 Specializee contract (bootstrap origin → specialized B)
 
@@ -128,56 +128,44 @@ When specializing product **B** from this bootstrap (**A → B only**):
 
 ### 2.6 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary name** | `sshd-cli` (`APP_NAME`, default `sshd-cli`) |
-| **Primary executable** | Repo root `./sshd-cli` (POSIX `/bin/sh`, single-file for `curl \| sh`) |
+| **Product / binary name** | `key-cli` (`APP_NAME`, default `key-cli`) |
+| **Primary executable** | Repo root `./key-cli` (POSIX `/bin/sh`, single-file for `curl \| sh`) |
 | **Dispatcher** | `app_main` (always invoked at end of script: `app_main "$@"` — no `${0##*/}` / APP_NAME basename gate; required for `curl \| sh`) |
 | **Output SSOT** | `out_text` + wrappers (`out_info`, `out_success`, `out_warn`, `out_error`, `out_die`, `out_plain`, `out_json`, …) |
-| **Version SSOT** | `VERSION` default `1.21.0` (script header / config block: `VERSION="1.21.0"`) |
+| **Version SSOT** | `VERSION` default `2.0.2` (script header / config block: `VERSION="2.0.2"`) |
 | **Install paths** | Global: `GLOBAL_BIN` default `/usr/local/bin`, or `${PREFIX}/bin` when Termux `PREFIX/bin` exists; User: `USER_BIN` default `${HOME}/.local/bin` |
 | **Interactive rc write path** | `BASHRC` default `${HOME}/.bashrc`. `install` PATH ensure creates/modifies this file. Tests/CI **MAY** set `BASHRC` to a file in a temp folder. Dual mention: `requirement-shell-path-and-shell-support`. |
-| **Remote channel env (help surface)** | `REPO_USER` / `REPO_NAME` (defaults `cloudgen` / `sshd-cli`); `SCRIPT_URL` composed default `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` (literal product default: `https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli`; override via env). **`help` / `about` MUST list these operator channel vars as designed — MUST NOT list `CHECKSUM`** (install-path runtime pin only; see `requirement-shell-automatic-checksum.md`). **`help` Environment also lists `BASHRC`.** |
-| **Type 1 / Type 2 commands** | Type 1: `backup-config` deposit via `util_sudo` (`sudo -n {{GLOBAL_BIN}}/sshd-cli backup-config`). Type 2: **None**. Domain sshd start/stop on Linux may **need a root login** (no in-tool sudo for those). Termux, Git Bash, and Windows cmd: Type 1/2 stay unused; backup-config / sync-config / sudoers fail closed. |
-| **Dedicated system user** | **Not required**. **MUST NOT** enable on Termux, Git Bash, or Windows cmd. |
-| **Normal-user-only CLI detect** | `sshd_is_normal_user_only_cli` = Termux **or** Git Bash **or** Windows cmd |
+| **Remote channel env (help surface)** | `REPO_USER` / `REPO_NAME` (defaults `cloudgen` / `key-cli`); `SCRIPT_URL` composed default `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}`. **`help` / `about` MUST list these operator channel vars as designed — MUST NOT list `CHECKSUM`**. **`help` Environment also lists `BASHRC`.** |
+| **Type 1 / Type 2 commands** | Type 1: `backup` / `restore` deposit via `util_sudo`; root `setup`. Type 2: **key-adm**. Termux, Git Bash, and Windows cmd: Type 1/2 stay unused; backup / restore / sudoers fail closed. |
+| **Dedicated system user** | **key-adm** (UID 1666). **MUST NOT** enable on Termux, Git Bash, or Windows cmd. |
+| **Normal-user-only CLI detect** | `key_is_normal_user_only_cli` = Termux **or** Git Bash **or** Windows cmd |
 
 #### Supported commands (normative for this project)
 
 | Command | Type | Handler (current) | Required behavior |
 |---------|------|-------------------|-------------------|
-| *(no args — empty argv)* | Type 0 | `app_main` → `sshd_cmd_menu` (TTY) or `inst_perform_install` / `inst_maybe_install` (non-TTY) | Interactive: domain menu. Non-interactive: **Type O install-ensure**. Never help. See `requirement-shell-cli-zero-arguments.md` |
-| `install` | Type 0 | `inst_perform_install` | Place binary; **always** `inst_ensure_companion` (rc + Termux pkg); then **start sshd** (`sshd_start_after_install`). Idempotent unless force reinstall of the binary. Dual mention: `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` · `requirement-domain-sshd` |
+| *(no args — empty argv)* | Type 0 | `app_main` → `key_cmd_menu` (TTY) or `inst_perform_install` / `inst_maybe_install` (non-TTY) | Interactive: domain menu. Non-interactive: **Type O install-ensure**. Never help. See `requirement-shell-cli-zero-arguments.md` |
+| `install` | Type 0 | `inst_perform_install` | Place binary; **always** `inst_ensure_companion` (rc PATH only; **no** OpenSSH pkg). Idempotent unless force reinstall of the binary. Dual mention: `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` · `requirement-domain-key` |
 | `version` | Type 0 | argv: `app_version`; TTY **82** / typed `version` on a board: `app_about` | Argv: print local version; JSON `"type":"version"` when `--json`. TTY numbered **82** and typed `version` run **about** (diagnostics), not a header reprint (**INC-20260914-001**). |
-| `about` | Type 0 | `app_about` | Diagnostics: install presence, global/local paths, user, shell, TTY; JSON when `--json`; **no `CHECKSUM` field** |
+| `about` | Type 0 | `app_about` | Diagnostics: install presence, global/local paths, user, shell, TTY, `key_cli_root` / `key_adm`; JSON when `--json`; **no `CHECKSUM` field** |
 | `version-check` | Type 0 | `ver_check` | Compare local vs remote `VERSION` from `SCRIPT_URL`; fail clearly if URL unset/unreachable |
-| `self-update` | Type 0 | `inst_self_update` | Fetch remote version; reinstall when policy allows; reuse install primitives. **CLI-only:** no auto-start sshd; no `sshd -t` of `/etc/ssh/sshd_config`. Dual mention: `requirement-shell-self-management` · `requirement-domain-sshd` |
+| `self-update` | Type 0 | `inst_self_update` | Fetch remote version; reinstall when policy allows; reuse install primitives. Dual mention: `requirement-shell-self-management` |
 | `self-uninstall` | Type 0 | `inst_self_uninstall` | Remove managed binary; PATH cleanup only if `~/.local/bin` empty (user installs) |
 | `help` | Type 0 | `app_help` | Full usage in human mode; short JSON note in JSON mode; Environment lists channel vars plus `BASHRC` — **not** `CHECKSUM` |
-| `status` | Type 0 domain | `sshd_cmd_status` | Show sshd running/port/paths and a live `ssh -p … user@lan` connect line. systemd host: unit name + active. Dual mention: `requirement-domain-sshd` |
-| `start` | Type 0 domain | `sshd_cmd_start` | Termux / no-unit Linux: OpenSSH `sshd -f` (no `-D`). POSIX Linux with a loaded distro unit: `systemctl start <unit>` as **root login**. Termux: auto-acquire Android wake lock. **No** routed `systemctl` verb; **no** in-tool `sudo`. Dual mention: `requirement-domain-sshd` · `requirement-shell-termux-ish` |
-| `stop` | Type 0 domain | `sshd_cmd_stop` | Same launch-path split (`systemctl stop <unit>` when a unit exists). Dual mention: `requirement-domain-sshd` |
-| `restart` | Type 0 domain | `sshd_cmd_restart` | Unit path: one `systemctl restart <unit>`. Else stop then start. Dual mention: `requirement-domain-sshd` |
-| `port` | Type 0 domain | `sshd_cmd_port` | Show or set listen Port. Dual mention: `requirement-domain-sshd` |
-| `config` | Type 0 domain | `sshd_cmd_config` | Show resolved sshd paths and key settings. Dual mention: `requirement-domain-sshd` |
-| `host-keys` | Type 0 domain | `sshd_cmd_host_keys` | List or generate host keys. Dual mention: `requirement-domain-sshd` |
-| `auth-keys` | Type 0 domain | `sshd_cmd_auth_keys` | List or add this login `authorized_keys`. Dual mention: `requirement-domain-sshd` |
-| `dns` | Type 0 domain | `sshd_cmd_dns` | This login `~/.ssh/config` Host list (TTY edit/add/delete/unset menu; as Termux / identity-file / Old OpenSSH; show; set/add/delete/unset operands). `unset` drops extra settings (user, port, …), not dns or ip. Dual mention: `requirement-domain-sshd` · `requirement-shell-interactive-vs-noninteractive` |
-| `ssh` | Type 0 domain | `sshd_cmd_ssh` | OpenSSH client to a concrete Host alias from this login `~/.ssh/config` (TTY numbered pick then user with default; operand `<n\|name>`). Dual mention: `requirement-domain-sshd` · `requirement-shell-interactive-vs-noninteractive`. Sample: `sshd-cli ssh 1` |
-| `download` | Type 0 domain | `sshd_cmd_download` | tar.gz a remote folder over ssh and extract into cwd (TTY Host pick, then user with default, then numbered previous folders or a typed path; `~/folder` allowed). Dual mention: `requirement-domain-sshd` · `requirement-shell-interactive-vs-noninteractive`. Sample: `sshd-cli download 1 /opt/app` · `sshd-cli download 1 ~/box/app` |
-| `upload` | Type 0 domain | `sshd_cmd_upload` | tar.gz a **local** folder over ssh and extract under the remote login home (TTY Host pick, then user with default, then numbered previous **local** folders or a typed path; `~/folder` is this login). Dual mention: `requirement-domain-sshd` · `requirement-shell-interactive-vs-noninteractive`. Sample: `sshd-cli upload 1 ./box` · `sshd-cli upload 1 ~/box/app` |
-| `menu` / `main` | Type 0 domain | `sshd_cmd_menu` | Numbered tree on a terminal (`main` is an unlisted alias of `menu`). Same handler as interactive empty argv. Front **1** client-side / **2** server-side / **8** self-management / **9** Exit. Dual mention: `requirement-shell-cli-default-interaction` · `requirement-domain-sshd` · `requirement-shell-interactive-vs-noninteractive` |
-| `wake-lock` | Type 0 | `sshd_cmd_wake_lock` | Acquire Android wake lock again (`termux-wake-lock`). Termux: fail closed if helper missing. Off Termux: success no-op. Dual mention: `requirement-shell-termux-ish` |
-| `wake-unlock` | Type 0 | `sshd_cmd_wake_unlock` | Release Android wake lock (`termux-wake-unlock`). Operator-owned. **MUST NOT** auto-run from `stop`. Dual mention: `requirement-shell-termux-ish` |
-| `backup-config` | Type 1 deposit (POSIX Linux) | `sshd_cmd_backup_config` | Copy this login `~/.ssh/config` to `/var/sshd-cli/config`. Dual mention: `requirement-shell-config-backup` · `requirement-shell-sudoer` · `requirement-domain-sshd`. Sample: `sshd-cli backup-config` |
-| `sync-config` | Type 0 | `sshd_cmd_sync_config` | Copy `/var/sshd-cli/config` to `~/.ssh/config` mode 600. Dual mention: `requirement-shell-config-backup`. Sample: `sshd-cli sync-config` |
-| `sync-from-remote` | Type 0 | `sshd_cmd_sync_from_remote` | `scp` a remote `/var/sshd-cli/config` into this login `~/.ssh/config` (mode 600). Remembers last SPEC as TTY default. Dual mention: `requirement-shell-config-backup`. Sample: `sshd-cli sync-from-remote user@host` |
-| `print-sudoers` | Type 0 | `sshd_cmd_print_sudoers` | Emit fragment. Dual mention: `requirement-shell-sudoer`. Sample: `sshd-cli print-sudoers` |
-| `print-sudoers-install-script` | Type 0 | `sshd_cmd_print_sudoers_install_script` | Admin script. Dual mention: `requirement-shell-sudoer`. Sample: `sshd-cli print-sudoers-install-script` |
-| `generate-sudoer-request` | Type 0 | `sshd_cmd_generate_sudoer_request` | Local JSON grant. Dual mention: `requirement-shell-sudoer`. Sample: `sshd-cli generate-sudoer-request` |
-| `submit-sudoer-request` | Type 0 | `sshd_cmd_submit_sudoer_request` | Queue inbound. Dual mention: `requirement-shell-sudoer`. Sample: `sshd-cli submit-sudoer-request` |
-| `remove-project-sudoers` | Type 0 | `sshd_cmd_remove_project_sudoers` | Delete draft. Dual mention: `requirement-shell-sudoer`. Sample: `sshd-cli remove-project-sudoers` |
-| `rc-test` | Type 0 **test-purpose** | `path_rc_test` | Fixture create / modify / no-op against `--root` tmp/cache. **MUST NOT** write this login’s real `{{HOME}}/.bashrc`. Help lists this **apart** from operational verbs. Dual mention: `requirement-shell-path-and-shell-support`. Sample: `sshd-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| `backup` | Type 1 deposit (POSIX Linux) | `key_cmd_backup` | Archive `/home/<user>/.ssh` to `/var/key-cli/<user>/ssh-YYYYMMDD-N.tar.gz`. Dual mention: `requirement-shell-config-backup` · `requirement-shell-sudoer` · `requirement-domain-key`. Sample: `key-cli backup` |
+| `restore` | Type 1 deposit (POSIX Linux) | `key_cmd_restore` | List or extract a dated archive. Dual mention: `requirement-shell-config-backup` · `requirement-domain-key`. Sample: `key-cli restore list` |
+| `auth-keys` | Type 0 (self) / Type 2 on-behalf | `key_cmd_auth_keys` | List or add `authorized_keys`. Dual mention: `requirement-domain-key`. Sample: `key-cli auth-keys add ./laptop.pub` |
+| `setup` | Type 1 | `key_cmd_setup` | Root: create key-adm + F6. Dual mention: `requirement-least-privilege-user`. Sample: `key-cli setup` |
+| `remove-lpu` | Type 1 | `key_cmd_remove_lpu` | Root: remove key-adm; keep archives. Dual mention: `requirement-least-privilege-user`. Sample: `key-cli remove-lpu --force` |
+| `menu` / `main` | Type 0 domain | `key_cmd_menu` | Numbered tree on a terminal. Front **1** keys / **2** on-behalf / **8** self-management / **9** Exit. Dual mention: `requirement-shell-cli-default-interaction` · `requirement-domain-key` |
+| `print-sudoers` | Type 0 | `key_cmd_print_sudoers` | Emit fragment. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli print-sudoers` |
+| `print-sudoers-install-script` | Type 0 | `key_cmd_print_sudoers_install_script` | Admin script. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli print-sudoers-install-script` |
+| `generate-sudoer-request` | Type 0 | `key_cmd_generate_sudoer_request` | Local JSON grant. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli generate-sudoer-request` |
+| `submit-sudoer-request` | Type 0 | `key_cmd_submit_sudoer_request` | Queue inbound. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli submit-sudoer-request` |
+| `remove-project-sudoers` | Type 0 | `key_cmd_remove_project_sudoers` | Delete draft. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli remove-project-sudoers` |
+| `rc-test` | Type 0 **test-purpose** | `path_rc_test` | Fixture create / modify / no-op against `--root` tmp/cache. **MUST NOT** write this login’s real `{{HOME}}/.bashrc`. Help lists this **apart** from operational verbs. Dual mention: `requirement-shell-path-and-shell-support`. Sample: `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
 
 #### Dual mention (CI-M1 — this project)
 
@@ -185,19 +173,18 @@ Every routed verb is named **here** and on a topic-owner. Help/`app_help` is **n
 
 | Verb | Topic-owner | Sample on owner |
 |------|-------------|-----------------|
-| empty argv | `requirement-shell-cli-zero-arguments` | `sshd-cli` (TTY menu / pipe install-ensure) |
-| `install` | `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` · `requirement-domain-sshd` · `requirement-shell-termux-ish` | `sshd-cli install` |
-| `version` | `requirement-shell-output-requirements` | `sshd-cli version` |
-| `about` | `requirement-shell-self-management` · `requirement-shell-cli-storage` | `sshd-cli about` |
-| `help` | `requirement-shell-cli-zero-arguments` · `requirement-shell-automatic-checksum` | `sshd-cli help` |
-| `version-check` / `self-update` | `requirement-shell-self-management` | `sshd-cli version-check` |
-| `self-uninstall` | `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` | `sshd-cli --force self-uninstall` |
-| `status` / `start` / `stop` / `restart` / `port` / `config` / `host-keys` / `auth-keys` / `dns` / `ssh` / `download` / `upload` / `menu` | `requirement-domain-sshd` | `sshd-cli status` · `sshd-cli dns list` · `sshd-cli ssh 1` · `sshd-cli download 1 /opt/app` · `sshd-cli upload 1 ./box` |
-| `backup-config` / `sync-config` / `sync-from-remote` | `requirement-shell-config-backup` · `requirement-shell-sudoer` · `requirement-domain-sshd` | `sshd-cli backup-config` · `sshd-cli sync-from-remote user@host` |
-| `print-sudoers` / `print-sudoers-install-script` / `generate-sudoer-request` / `submit-sudoer-request` / `remove-project-sudoers` | `requirement-shell-sudoer` | `sshd-cli generate-sudoer-request` |
-| `main` | `requirement-domain-sshd` | alias of `menu` (help names the alias; type `menu`) |
-| `wake-lock` / `wake-unlock` | `requirement-shell-termux-ish` | `sshd-cli wake-lock` · `sshd-cli wake-unlock` |
-| `rc-test` | `requirement-shell-path-and-shell-support` | `sshd-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| empty argv | `requirement-shell-cli-zero-arguments` | `key-cli` (TTY menu / pipe install-ensure) |
+| `install` | `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` · `requirement-domain-key` | `key-cli install` |
+| `version` | `requirement-shell-output-requirements` | `key-cli version` |
+| `about` | `requirement-shell-self-management` · `requirement-shell-cli-storage` | `key-cli about` |
+| `help` | `requirement-shell-cli-zero-arguments` · `requirement-shell-automatic-checksum` | `key-cli help` |
+| `version-check` / `self-update` | `requirement-shell-self-management` | `key-cli version-check` |
+| `self-uninstall` | `requirement-shell-self-management` · `requirement-shell-path-and-shell-support` | `key-cli --force self-uninstall` |
+| `backup` / `restore` / `auth-keys` / `menu` | `requirement-domain-key` · `requirement-shell-config-backup` | `key-cli backup` · `key-cli restore list` · `key-cli auth-keys add ./laptop.pub` |
+| `setup` / `remove-lpu` | `requirement-least-privilege-user` | `key-cli setup` |
+| `print-sudoers` / `print-sudoers-install-script` / `generate-sudoer-request` / `submit-sudoer-request` / `remove-project-sudoers` | `requirement-shell-sudoer` | `key-cli generate-sudoer-request` |
+| `main` | `requirement-domain-key` | alias of `menu` (help names the alias; type `menu`) |
+| `rc-test` | `requirement-shell-path-and-shell-support` | `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
 
 #### Global flags (normative wiring for this project)
 
@@ -214,7 +201,7 @@ Every routed verb is named **here** and on a topic-owner. Help/`app_help` is **n
 # Empty argv: TTY menu vs Type O install-ensure. Always app_main "$@" (no basename gate).
 if [ $# -eq 0 ]; then
     if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
-        sshd_cmd_menu
+        key_cmd_menu
         exit $?
     fi
     if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
@@ -229,13 +216,13 @@ if [ $# -eq 0 ]; then
     fi
 fi
 # rc-test operands accumulate then: set -- ${RC_TEST_OPERANDS}; path_rc_test "$@"
-# Domain verbs (status|start|stop|restart|port|config|host-keys|auth-keys|dns|ssh|download|upload|menu|main|wake-lock|wake-unlock)
-# share the same parse pass as Type 0. Operands after port/dns/ssh/download/upload/… go in DOMAIN_OPERANDS.
+# Domain verbs (backup|restore|auth-keys|setup|remove-lpu|menu|main|print-sudoers|…)
+# share the same parse pass as Type 0. Operands after backup/restore/auth-keys go in DOMAIN_OPERANDS.
 ```
 
 #### Dispatcher acceptance criteria (this project)
 
-1. Unknown token after flag parse → `out_die` with pointer to `sshd-cli help`.  
+1. Unknown token after flag parse → `out_die` with pointer to `key-cli help`.  
 2. Zero-arg → interactive menu **or** non-interactive install-ensure (not help); failures non-zero.  
 3. Command routing table in `app_main` **must** include every **operational** row in the command table above **and** `rc-test`.  
 4. Help text **must** stay aligned with that table (no orphan commands, no listed-but-unrouted commands). Help **MUST** list `rc-test` under a heading **apart** from operational verbs.  
@@ -243,10 +230,10 @@ fi
 
 #### Explicitly out of scope until a new requirement
 
-- Type 1: `prerequisites`, `create-user`, Docker host install, wrapping `sudo` inside this CLI, wrapping Linux `apt`/`dnf` (Termux `pkg` on `install` is the Termux-ish companion — `requirement-shell-termux-ish` — not a Type 1 verb). On Termux, Git Bash, or Windows cmd these **MUST NOT** be enabled.  
-- Type 2: app ops under a dedicated system user. On Termux, Git Bash, or Windows cmd **MUST NOT** be enabled.  
-- Domain catalog ownership lives on `requirement-domain-sshd` (this file dual-mentions the verbs)  
-- Writing systemd unit files; routed verbs `systemctl` / `enable-service` / `sv-enable` / `add-crontab`; `systemctl enable` / `disable` / `mask`; `termux-services`. Domain `start`/`stop`/`restart` **may** invoke `systemctl` internally on POSIX Linux — `requirement-domain-sshd` §2.2.1.  
+- Type 1: `prerequisites`, `create-user`, Docker host install, wrapping Linux `apt`/`dnf`, wrapping `pkg install openssh`. On Termux, Git Bash, or Windows cmd Type 1 **MUST** stay unused (`requirement-shell-termux-ish`).  
+- Type 2: app ops under a dedicated system user **except** **key-adm** on POSIX Linux (`requirement-least-privilege-user`). On Termux, Git Bash, or Windows cmd **MUST NOT** be enabled.  
+- Domain catalog ownership lives on `requirement-domain-key` (this file dual-mentions the verbs)  
+- OpenSSH sshd start/stop/port/host-keys; client `dns` / `ssh` / `download` / `upload`; `wake-lock`. Those are unknown commands.  
 
 ### 2.7 Why This Requirement Exists (Direct CIAO Alignment)
 
@@ -284,9 +271,9 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-termux-ish`.
 
-**This requirement:** the command table Type 1 / Type 2 rows stay unused; detect lives in the dispatcher helpers; **MUST NOT** add Type 1 or Type 2 verbs on this class; **MUST NOT** invoke `systemctl` or add `termux-services` / cron-as-service verbs on that class. POSIX Linux `systemctl` for a distro ssh unit is **not** this class (`requirement-domain-sshd` §2.2.1).
+**This requirement:** Type 1 deposit and Type 2 key-adm stay unused on this class; detect lives in the dispatcher helpers; **MUST NOT** add Type 1 or Type 2 verbs on this class; **MUST NOT** invoke `systemctl` or add `termux-services` / cron-as-service verbs.
 
 ---
 

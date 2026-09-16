@@ -1,165 +1,143 @@
 **file**: docs/requirements/requirement-shell-config-backup.md  
-**Status**: Active (Version 1.0.0)  
+**Status**: Active (Version 2.0.0)  
 **Area**: shell  
 **Key**: `requirement-shell-config-backup`  
 **Philosophy**: CIAO **v2.10.2** / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered / Over-protect)
 
 ## 1. Purpose
 
-This requirement is the operations Single Source of Truth for depositing this login’s `~/.ssh/config` into `/var/sshd-cli` (`backup-config`), copying that store back (`sync-config`), and pulling the same file from another host (`sync-from-remote`) with mode `600`. It is not folder-archive tar.gz.
+This requirement is the operations Single Source of Truth for depositing this login’s whole `~/.ssh` folder as a dated `tar.gz` into `/var/key-cli/{{username}}/` (`backup`) and extracting it back (`restore`). It **is** folder-archive tar.gz. It is **not** a single-file copy of `~/.ssh/config`.
 
-**Depends on `requirement-shell-sudoer`:** elev is `sudo -n /usr/local/bin/sshd-cli backup-config` through `util_sudo`; JSON grant and print/generate/submit live there. This file **MUST NOT** invent a second wrap or grant.
+**Depends on `requirement-shell-sudoer`:** elev is `sudo -n /usr/local/bin/key-cli backup` (and `restore *`) through `util_sudo`. JSON grant and print/generate/submit live there. This file **MUST NOT** invent a second wrap or grant.
 
 ### 1.1 Human-facing
 
-**In one sentence:** `backup-config` copies this login’s SSH client config into `/var/sshd-cli/config` as root after a passwordless grant; `sync-config` copies that file back as you, mode 600; `sync-from-remote` `scp`s the same file from another host.
+**In one sentence:** `backup` archives `/home/<user>/.ssh` into `/var/key-cli/<user>/ssh-YYYYMMDD-N.tar.gz` as root after a passwordless grant; `restore` extracts that archive back.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Push or pull the SSH client config | `sshd-cli backup-config` · `sshd-cli sync-config` · `sshd-cli sync-from-remote user@host` |
-| The other role | sudoer-adm approves passwordless `sudo sshd-cli backup-config` | JSON grant — `requirement-shell-sudoer` |
-| Not this file | Host list edit; sudoers JSON schema | `requirement-domain-sshd` · `requirement-shell-sudoer` |
+| You / this login | Push or pull the `.ssh` folder | `key-cli backup` · `key-cli restore` |
+| The other role | sudoer-adm approves passwordless `sudo key-cli backup` | JSON grant — `requirement-shell-sudoer` |
+| Not this file | Host list edit; sudoers JSON schema; key-adm identity | `requirement-domain-key` · `requirement-shell-sudoer` · `requirement-least-privilege-user` |
 
 | Includes | Excludes |
 |----------|----------|
-| Source `~/.ssh/config`; dest `/var/sshd-cli/config`; SUDO_USER home when elevated; dest mode 600 on sync; `sync-from-remote` SPEC + preferred-remote | Whole `~/.ssh` including private keys; folder-archive `backup`/`restore`; Termux / Git Bash / Windows cmd **deposit** |
+| Source `/home/{{username}}/.ssh`; dest `/var/key-cli/{{username}}/ssh-YYYYMMDD-N.tar.gz`; SUDO_USER when elevated; archive `root:root` `0600`; restore with `--force` | Copying only `config`; `sync-from-remote`; Termux / Git Bash / Windows cmd **deposit** |
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `./sshd-cli` | ship unit | live verbs |
-| `/var/sshd-cli/config` | durable store | backup dest / sync source |
-| `sshd-cli backup-config` | command | elevated push |
+| `./key-cli` | ship unit | live verbs |
+| `/var/key-cli/<user>/` | durable store | backup dest / restore source |
+| `key-cli backup` | command | elevated archive |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Share this login’s SSH names | Copy `~/.ssh/config` into the host store as root | `sshd-cli backup-config` |
-| Use the shared names | Copy the store into this login’s `~/.ssh/config` as 600 | `sshd-cli sync-config` |
-| Pull from another host | `scp` that host’s `/var/sshd-cli/config` | `sshd-cli sync-from-remote user@host` |
-| If sudo is refused | Queue the grant first (sudoer SSOT) | `sshd-cli generate-sudoer-request` then `sshd-cli submit-sudoer-request` |
+| Keep a copy of this login’s keys | Archive `.ssh` into the host store as root | `key-cli backup` |
+| Put them back | Extract a dated archive | `key-cli restore list` then `key-cli restore ssh-YYYYMMDD-N.tar.gz` |
+| If sudo is refused | Queue the grant first (sudoer SSOT) | `key-cli generate-sudoer-request` then `key-cli submit-sudoer-request` |
 
 ## 2. Core Rules / Requirements (Mandatory)
 
 ### 2.0 Dependency on sudoer features (sacred)
 
-1. `backup-config` **MUST** re-exec through `util_sudo` owned by `requirement-shell-sudoer`.  
-2. Grant **MUST** be that file’s allow table (`backup-config` verb-only).  
-3. Refused sudo **MUST** tell the operator to use `generate-sudoer-request` / `submit-sudoer-request` (those verbs are **not** re-specified here).  
+1. `backup` / `restore` **MUST** re-exec through `util_sudo` owned by `requirement-shell-sudoer` when the production dest needs elev.  
+2. Grant **MUST** be that file’s allow table (`backup`, `backup *`, `restore *`, and `--json` twins).  
+3. Refused sudo **MUST** tell the operator to use `generate-sudoer-request` / `submit-sudoer-request`.  
 4. **MUST NOT** duplicate JSON emit, fragment emit, or a second wrap in this file.
 
 ### 2.1 Source and dest
 
-1. Source **MUST** be the invoking login’s `{{HOME}}/.ssh/config`. When the process is root via sudo, invoking home **MUST** be `SUDO_USER`’s passwd home (not `/root`) unless tests set an explicit root home.  
-2. Default dest directory **MUST** be `/var/sshd-cli`. Override `SSHD_CLI_ROOT` (tests / non-production). Store file **MUST** be `{{SSHD_CLI_ROOT}}/config`.  
-3. **MUST NOT** copy private keys, `id_*`, or the whole `~/.ssh` directory.  
-4. Missing source **MUST** fail closed. Next: create this login’s SSH config (for example `sshd-cli dns add`), then `sshd-cli backup-config`.
+1. Source **MUST** be `{{KEY_HOME_ROOT}}/{{username}}/.ssh` (default `/home/{{username}}/.ssh`). When the process is root via sudo, invoking username **MUST** be `SUDO_USER` unless an on-behalf operand is allowed.  
+2. Default dest root **MUST** be `/var/key-cli`. Override `KEY_CLI_ROOT` (tests / non-production). Archive **MUST** be `{{KEY_CLI_ROOT}}/{{username}}/ssh-{{YYYYMMDD}}-{{N}}.tar.gz`.  
+3. **MUST** archive the whole `.ssh` directory (including private keys). Archive mode **MUST** be `0600`, owner `root:root` after elevated deposit.  
+4. Missing source **MUST** fail closed. Next: create that login’s `.ssh` folder, then `key-cli backup`.  
+5. Same-day re-run **MUST** increment `N` (never overwrite).
 
-### 2.2 backup-config (elevated deposit)
+### 2.2 backup (elevated deposit)
 
 1. On Termux, Git Bash, or Windows cmd **MUST** fail closed. Next: use a POSIX Linux host.  
-2. Writing the production dest as a non-root login **MUST** re-exec `sudo -n {{GLOBAL_BIN}}/sshd-cli backup-config` through `util_sudo`.  
-3. If that sudo is refused, **MUST** fail closed. Next: `sshd-cli generate-sudoer-request && sshd-cli submit-sudoer-request`.  
-4. As root, the ship unit **MUST** `mkdir` the dest if needed, copy the file, `chown root:root`, `chmod 0644` the file and `0755` the dest.  
-5. **MUST NOT** grant OS tools in sudoers; those run inside the elevated product command (`requirement-shell-sudoer`).  
-6. A writable `SSHD_CLI_ROOT` outside `/var/sshd-cli` **MAY** accept Type 0 deposit for tests. Production dest **MUST NOT** skip elev just because it happens to be writable.  
-7. Re-running backup-config **MUST** overwrite the same basename.
+2. Writing the production dest as a non-root login **MUST** re-exec `sudo -n {{GLOBAL_BIN}}/key-cli backup` through `util_sudo` (with `--json` when JSON mode).  
+3. If that sudo is refused, **MUST** fail closed. Next: `key-cli generate-sudoer-request && key-cli submit-sudoer-request`.  
+4. As root, the ship unit **MUST** `mkdir` the dest if needed, `tar czf` from the parent of `.ssh`, `chown root:root`, `chmod 0600` the archive and `0750` the user dest dir.  
+5. **MUST NOT** grant OS tools in sudoers; those run inside the elevated product command.  
+6. A writable `KEY_CLI_ROOT` outside `/var/key-cli` **MAY** accept Type 0 deposit for tests. Production dest **MUST NOT** skip elev just because it happens to be writable.  
+7. After deposit, **MUST** report verify counts (`source_files`, members, size). **MUST NOT** extract to verify.
 
-### 2.3 sync-config (no sudo)
+### 2.3 restore
 
-1. `sync-config` **MUST NOT** call `sudo`. **MUST NOT** appear in the sudoers grant.  
-2. Source is `{{SSHD_CLI_ROOT}}/config`. Dest is this login’s `{{HOME}}/.ssh/config`.  
-3. **MUST** fail closed if the store is missing or unreadable without sudo. Next: someone with an approved `sudo sshd-cli backup-config` must push first.  
-4. **MUST** create dest `~/.ssh` if needed (dir mode `700` when possible). Dest `config` **MUST** be mode `600`.
+1. `restore` **MUST** elevate the same way as `backup` when reading the production dest.  
+2. `restore list [user]` **MUST** list `ssh-*.tar.gz` basenames for that user.  
+3. Extract dest **MUST** be that user’s `.ssh` (`{{KEY_HOME_ROOT}}/{{username}}/.ssh` on POSIX Linux). Non-empty dest **MUST** require `--force` or a TTY confirm.  
+4. As root, **MUST** `chown` the restored tree to that username and `chmod 0700` the directory.  
+5. When dest `.ssh` already exists, `restore` **MUST** `backup` that user globally **before** extract (fail closed if backup cannot run).
 
-### 2.4 sync-from-remote (no sudo)
+### 2.3a auth-keys add (depends on backup)
 
-1. **MUST** route **`sync-from-remote`**. Dual mention: this file **and** `requirement-shell-cli-interface`.  
-2. **MUST** be Type 0. **MUST NOT** call `sudo`. **MUST** be available on Termux / Git Bash / Windows cmd.  
-3. Operand **SPEC** **MUST** be exactly one of: `{{user}}@{{ipv4}}`, `{{ipv4}}`, `{{domain-name}}`, `{{user}}@{{domain-name}}`.  
-4. When SPEC has no `user@`, SSH **MUST** use the invoking login / ssh config (do not invent a Unix login).  
-5. **MUST** reject empty SPEC, extra `@`, paths, and shell metacharacters. Off-TTY missing SPEC **MUST** fail closed with Next: `sshd-cli sync-from-remote USER@HOST`. On TTY with no operand, **MUST** `read` in the current shell (**MUST NOT** `_spec=$(prompt_ask …)`).  
-6. Preferred SPEC **MUST** be stored in `${HOME}/.local/${APP_NAME}/preferred-remote` (mode **0600**). After a successful pull, **MUST** save the SPEC that worked. On TTY with no operand, **MUST** load that leaf first. Empty input (Enter) **MUST** use that default when valid. **MUST NOT** store on `/dev/shm`.  
-7. Transport **MUST** be `scp` in **BatchMode**. Override `SSHD_CLI_SCP` for tests.  
-8. Remote source **MUST** be `{{SSHD_CLI_REMOTE_ROOT}}/config` (default `/var/sshd-cli`). Dest mode **600**.  
-9. Core tests **MUST NOT** open a real SSH session.
+1. `auth-keys add` **MUST** take a global `backup` of that user’s `.ssh` **before** appending. If `.ssh` is missing, create it (`0700`) then backup.  
+2. After a successful append (not a duplicate no-op), **MUST** `backup` again so the store includes the new line.  
+3. Nested backup **MUST NOT** emit a second JSON object.  
+4. On Termux / Git Bash / Windows cmd this **MUST** fail closed (deposit is not available).
 
-### 2.5 Invocation samples
+### 2.4 Invocation samples
 
 ```text
-sshd-cli backup-config
-sshd-cli sync-config
-sshd-cli sync-from-remote user@host.example.test
-sshd-cli generate-sudoer-request
-sshd-cli submit-sudoer-request
+key-cli backup
+key-cli backup alice
+key-cli restore list
+key-cli restore ssh-20260914-1.tar.gz
+key-cli --force restore alice ssh-20260914-1.tar.gz
+key-cli generate-sudoer-request
+key-cli submit-sudoer-request
 ```
 
-The last two are owned by `requirement-shell-sudoer` (listed so the dependency is visible).
-
-### 2.6 Implementation Notes (this project)
+### 2.5 Implementation Notes (this project)
 
 | Item | Value |
 |------|--------|
-| Store | `/var/sshd-cli/config` (`SSHD_CLI_ROOT` default `/var/sshd-cli`) |
-| Source | `$(sshd_invoking_home)/.ssh/config` |
-| Elev argv | `sudo -n /usr/local/bin/sshd-cli backup-config` (`requirement-shell-sudoer`) |
-| Handlers | `sshd_cmd_backup_config` · `sshd_cmd_sync_config` · `sshd_cmd_sync_from_remote` |
-| Persistence | `${HOME}/.local/sshd-cli/preferred-remote` |
-| Tests | `tests/test_config_backup.sh` **TP-CFG-01..16** |
+| Store | `/var/key-cli` (`KEY_CLI_ROOT`) |
+| Source | `{{KEY_HOME_ROOT}}/{{username}}/.ssh` |
+| Elev argv | `sudo -n /usr/local/bin/key-cli backup` (`requirement-shell-sudoer`) |
+| Handlers | `key_cmd_backup` · `key_cmd_restore` |
+| Tests | `tests/test_config_backup.sh` **TP-CFG-01..24** |
 
-### 2.7 Why This Requirement Exists (Direct CIAO Alignment)
+### 2.6 Why This Requirement Exists (Direct CIAO Alignment)
 
-- **CIAO Principle 10 – Least privilege** (https://github.com/cloudgen/ciao): elev is the product command only (sudoer SSOT).  
-- **CIAO Principle 12 – Right backup** (https://github.com/cloudgen/ciao): durable host store is not the dns pre-edit `.bak`.  
-- **CIAO Principle 22 – File modes** (https://github.com/cloudgen/ciao): store 0644; dest 600.
+- **CIAO Principle 10 – Least privilege**: elev is the product command only (sudoer SSOT).  
+- **CIAO Principle 12 – Right backup**: dated non-overwriting archives; private keys stay `0600`.  
+- **CIAO Principle 22 – File modes**: archive 0600; `.ssh` dir 0700.
 
 ## Under command line for normal user only
 
-When the ship unit detects Termux, Git Bash, Windows cmd, or the same class: **MUST NOT** deposit into `/var/sshd-cli` or wrap `sudo`. Direct `backup-config` / local `sync-config` **MUST** fail closed. TTY menu **MUST** print `[INFO] backup-config and sync-config not available for termux` / `gitbash` / `windows-cmd` **before** the numbered list and **MUST** omit those rows (and sudoers). **`sync-from-remote` remains available** and **MUST** be numbered **8** on that class (`ssh` is 6, `download` is 7).
+When the ship unit detects Termux, Git Bash, Windows cmd, or the same class: **MUST NOT** deposit into `/var/key-cli` or wrap `sudo`. Direct `backup` / `restore` **MUST** fail closed. TTY menu **MUST** print `[INFO] backup and restore not available for termux` / `gitbash` / `windows-cmd` **before** the numbered keys list and **MUST** omit those rows (and sudoers).
 
-**This requirement:** host deposit is POSIX Linux; remote pull is this-login `scp` on every class.
+**This requirement:** host deposit is POSIX Linux.
 
 ## 3. Design Principles (CIAO / CIAO-Lite)
 
-- **Caution**: SUDO_USER home; no private keys.  
-- **Intentional**: `backup-config` vs `sync-config` vs sudoer workflow.  
-- **Anti-fragile**: `SSHD_CLI_ROOT` for tests.  
-- **Over-protect**: fail closed on this-login-only hosts.
+- **Caution**: SUDO_USER; private-key archives are not world-readable.  
+- **Intentional**: `backup` vs `restore` vs sudoer workflow.  
+- **Anti-fragile**: `KEY_CLI_ROOT` / `KEY_HOME_ROOT` for tests.  
+- **Over-protect**: fail closed on this-login-only hosts; on-behalf only as key-adm.
 
 ## 4. Protection Rule (Sacred)
 
 **Future AI assistants or maintainers MUST NOT**:
 
-1. Tar the whole `~/.ssh` or copy private keys.  
-2. Name the pull verb `restore` / `restore-config`.  
-3. Grant `cp`/`mkdir`/`chmod` in sudoers.  
+1. Copy only `~/.ssh/config` and call that `backup`.  
+2. Name the pull verb `sync-config` / `sync-from-remote`.  
+3. Grant `cp`/`mkdir`/`chmod`/`tar` in sudoers.  
 4. Enable **deposit** on Termux / Git Bash / Windows cmd.  
-5. Use `/root/.ssh/config` when `SUDO_USER` is set.  
-6. Hide or fail-closed `sync-from-remote` because Termux/Git Bash was detected.  
-7. `_spec=$(prompt_ask …)` for the remote SPEC.  
-8. Store preferred-remote on `/dev/shm`.  
-9. Invent a second `util_sudo` or JSON grant — compose `requirement-shell-sudoer`.
+5. Use `/root/.ssh` when `SUDO_USER` is set.  
+6. Leave archives mode `0644`.  
+7. Invent a second `util_sudo` or JSON grant — compose `requirement-shell-sudoer`.  
+8. Overwrite an existing same-day archive basename.
 
 ## 5. Design-time verification
 
 | TP family / ID | Suite | Status |
 |----------------|-------|--------|
-| **TP-CFG-01..16** | `tests/test_config_backup.sh` | have |
+| **TP-CFG-01..24** | `tests/test_config_backup.sh` | have |
 
-**TP-CFG-06/07** also cover the sudoer dependency (`requirement-shell-sudoer`).
-
-**Matrix:** `docs/reviews/requirement-test-matrix.md`  
-**Map:** `docs/reviews/test-plan.md`.
-
-## 6. Related artifacts (versioned surface only)
-
-| Artifact | Role |
-|----------|------|
-| `docs/requirements/index.md` | Registry |
-| `docs/requirements/requirement-shell-sudoer.md` | **Required peer** — wrap, JSON, print/generate/submit |
-| `docs/requirements/requirement-domain-sshd.md` | Dual mention catalog |
-| `docs/requirements/requirement-sshd-config-backup.md` | Points here (product store names) |
-| `docs/requirements/requirement-shell-cli-interface.md` | Dual mention |
-| `./sshd-cli` | Ship unit |
-
-**Last Updated**: 2026-09-12  
-**Owner**: sshd-cli project maintainers  
-**Alignment**: Registry `docs/requirements/index.md`; CIAO (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).
+**Last Updated**: 2026-09-14  
+**Owner**: Cloudgen Wong  
+**Alignment**: Registry `docs/requirements/index.md`; **CIAO** (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

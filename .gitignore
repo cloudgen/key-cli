@@ -1,6 +1,6 @@
 # =============================================================================
 # .gitignore — skill-create-gitignore (+ skill-commit-check)
-# Product: sshd-cli (specialized software-dev; Termux-first OpenSSH sshd CLI)
+# Product: key-cli (specialized software-dev; SSH user-key backup/restore CLI)
 # Docs: track docs/requirements/** ; ignore skills/incidents/terminologies/policies/templates
 # Track: README, CHANGELOG, LICENSE, SECURITY, src/, tests/, reviews/
 # Artifacts: universal compiled/temp/secrets/caches; shell run debris

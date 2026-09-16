@@ -4,7 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| **1.20.0** (current) | Yes — report security issues against this release |
+| **2.0.2** (current) | Yes — report security issues against this release |
+| 2.0.0 | Superseded — prefer current when reporting |
+| 1.21.0 | Superseded — prefer current when reporting |
+| 1.20.0 | Superseded — prefer current when reporting |
 | 1.19.1 | Superseded — prefer current when reporting |
 | 1.19.0 | Superseded — prefer current when reporting |
 | 1.18.0 | Superseded — prefer current when reporting |
@@ -73,7 +76,7 @@ This product implements **automatic companion-checksum** on online install and s
 | **Missing sidecar** | Warning, then continue (not “always verified”). |
 | **Optional pin** | Process-env `CHECKSUM` is **secondary** (CI / out-of-band freeze). Same-origin pin is **not** stronger than automatic mode. Not listed in `help` / `about`. |
 | **Trust bound** | Same-channel SHA-256 proves **byte consistency**. It is not independent authenticity (signing) by itself. |
-| **Forbidden** | Embedding the digest of `./sshd-cli` *inside* `./sshd-cli`. |
+| **Forbidden** | Embedding the digest of `./key-cli` *inside* `./key-cli`. |
 
 ## Scope notes
 

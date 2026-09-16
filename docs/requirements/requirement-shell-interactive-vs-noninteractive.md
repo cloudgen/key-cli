@@ -304,7 +304,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (shell interactive vs non-interactive)
 
-Mode-related work for sshd-cli is **not done** if any of the following fail:
+Mode-related work for key-cli is **not done** if any of the following fail:
 
 1. No code path blocks on `read` under `--json`, `--quiet`, or non-TTY (except documented `INTERACTIVE=1` value prompt).  
 2. Destructive uninstall without `--force` does not silently proceed in non-interactive mode.  
@@ -326,7 +326,7 @@ Mode-related work for sshd-cli is **not done** if any of the following fail:
 | `docs/requirements/requirement-shell-self-management.md` | Uninstall confirm / force policy |
 | `docs/requirements/requirement-shell-idempotency.md` | Re-run safety under automation |
 | `docs/requirements/index.md` | Registry SSOT |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ---
 
@@ -334,15 +334,13 @@ Mode-related work for sshd-cli is **not done** if any of the following fail:
 
 | TP family / ID | Suite | Status |
 |----------------|-------|--------|
-| **TP-SSH-07**, **TP-SSH-08** | `tests/test_ssh_download.sh` | have |
-| **TP-DL-04**, **TP-DL-05**, **TP-DL-10** .. **TP-DL-17** | `tests/test_ssh_download.sh` | have |
-| **TP-DNS-13**, **TP-DNS-20**, **TP-DNS-21**, **TP-DNS-44**, **TP-DNS-47** .. **TP-DNS-49** | `tests/test_dns.sh` | have |
-| **TP-SSHD-05**, **TP-SSHD-16** | `tests/test_cli.sh` | have |
-| **TP-CFG-17** | `tests/test_config_backup.sh` | have |
-| **TP-UL-01** .. **TP-UL-18** | `tests/test_ssh_download.sh` | **have** |
+| **TP-CLI-07** · **TP-CLI-14** | `tests/test_cli.sh` | have |
+| **TP-KEY-08** · **TP-KEY-16** | `tests/test_cli.sh` | have |
+| **TP-LC-05** | `tests/test_local_lifecycle.sh` | have |
+| **TP-CFG-17** · **TP-CFG-22** | `tests/test_config_backup.sh` | have |
 
 **Map:** `reviews/test-plan.md`
 
-**Last Updated**: 2026-09-13 (TTY unknown menu choice redisplays that layer; DTV **TP-SSHD-16** · **TP-DNS-47..49** · **TP-CFG-17** · **TP-DL-17**)  
-**Owner**: sshd-cli project maintainers  
+**Last Updated**: 2026-09-16 (key-cli TTY unknown menu / sudoers / restore picker redisplay)  
+**Owner**: Cloudgen Wong  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 16, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

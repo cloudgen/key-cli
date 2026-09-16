@@ -79,8 +79,8 @@ Walk the chain. Parent **must exist** before `mkdir` of a `cache` leaf (except T
 
 | Item | Live value |
 |------|------------|
-| **Product / binary** | `sshd-cli` |
-| **Resolver** | `util_resolve_storage` in `./sshd-cli` |
+| **Product / binary** | `key-cli` |
+| **Resolver** | `util_resolve_storage` in `./key-cli` |
 | **Config fallback** | `: "${STORAGE_DIR:=${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}}"` |
 | **Call sites** | `app_main` (resolve + TMPDIR); `app_about` (human + JSON) |
 | **Not used for** | Domain project trees (bootstrap has none) |
@@ -114,7 +114,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** scratch/cache resolve stays this-login (`$PREFIX` / Git Bash AppData Temp / user cache); **MUST NOT** write `/etc` dests or Type 2 homes. **MUST NOT** die on `/dev/shm` mkdir when a later this-login cache still works.
 
@@ -141,7 +141,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (shell CLI storage)
 
-Storage resolve work for sshd-cli is **not done** if any of the following fail:
+Storage resolve work for key-cli is **not done** if any of the following fail:
 
 1. Exactly one authoritative resolver (`util_resolve_storage`) returns the chosen path on stdout after `mkdir -p` of that root.  
 2. Resolve priority matches this requirement (`/dev/shm` fail-soft → Termux `$PREFIX/tmp` / Git Bash AppData Temp/`cache` → `$TEMP/cache` → `/tmp/cache` → `STORAGE_DIR`). Mid-chain mkdir failure does not abort.  

@@ -1,11 +1,11 @@
-# What to review — sshd-cli
+# What to review — key-cli
 
-**Living checklist** (review plan). Product: **sshd-cli** — simplify Termux to install sshd.  
-**Class:** software-development · domain SSOT `requirement-domain-sshd` · online-install channel + TTY menu / non-TTY install-ensure.  
+**Living checklist** (review plan). Product: **key-cli** — backup/restore this login’s `~/.ssh` into `/var/key-cli`.  
+**Class:** software-development · domain SSOT `requirement-domain-key` · online-install channel + TTY menu / non-TTY install-ensure.  
 **Always load first:** `reviews/lessons.md`
 
-**Last plan update:** 2026-09-13  
-**Ship unit VERSION:** 1.19.2  
+**Last plan update:** 2026-09-16  
+**Ship unit VERSION:** 2.0.2  
 **Suite baseline:** see `reviews/test-plan.md`
 
 ---
@@ -14,14 +14,14 @@
 
 | # | Check | Notes |
 |---|--------|-------|
-| P1 | Read `docs/requirements/index.md` | Class + shell + domain sshd + config deposit + sudoers (18 Active) |
-| P2 | Confirm ship unit `src/sshd-cli` / `./sshd-cli` | `APP_NAME` / `VERSION` hard-assign (**1.19.2**); same bytes |
+| P1 | Read `docs/requirements/index.md` | Class + shell + domain-key + config deposit + sudoers + LPU |
+| P2 | Confirm ship unit `src/key-cli` / `./key-cli` | `APP_NAME` / `VERSION` hard-assign (**2.0.2**); same bytes |
 | P3 | Load `reviews/lessons.md` and re-check open L-* that still apply | Skip L-SUDOERS / restore lessons as parent-only |
 | P4 | Run `./tests/run.sh` | Record PASS/FAIL/SKIP in report |
-| P5 | Confirm install **channel** is `cloudgen/sshd-cli` | `SCRIPT_URL` default raw GitHub |
-| P6 | Confirm trimmed verbs stay unknown | backup / restore / print-sudoers |
+| P5 | Confirm install **channel** is `cloudgen/key-cli` | `SCRIPT_URL` default raw GitHub |
+| P6 | Confirm removed OpenSSH verbs stay unknown | start / dns / ssh / download / upload / wake-lock |
 | P7 | Human-facing | Every REQ has §1.1; README Description is people language; help does not lead with Type 0 |
-| P8 | Normal-user-only CLI | Termux / Git Bash / Windows cmd: no `sudo curl`, no `pkg` except Termux named list |
+| P8 | Normal-user-only CLI | Termux / Git Bash / Windows cmd: no `sudo curl`, no OpenSSH `pkg`, no wake-lock |
 
 ---
 
@@ -30,7 +30,7 @@
 | Surface | Path | Review focus |
 |---------|------|--------------|
 | Class | `requirement-class-software-dev.md` | posix-sh; Termux sshd purpose; **project nature** |
-| Domain | `requirement-domain-sshd.md` | status/start/stop/port/keys/menu/dns; Termux daemonize; POSIX Linux systemd `systemctl` unit path; this-login ssh_config dns-ip; non-root menu hides 2/3/4; TTY unknown choice redisplay; **upload** client **14** (**TP-UL-01..18**) |
+| Domain | `requirement-domain-key.md` | backup/restore/auth-keys/setup/remove-lpu/menu; Termux hide; TTY unknown choice redisplay |
 | CLI interface | `requirement-shell-cli-interface.md` | This-login + domain commands, flags, dispatch; dual mention |
 | Empty argv | `requirement-shell-cli-zero-arguments.md` | TTY **menu** / non-TTY **install-ensure** |
 | Self-management | `requirement-shell-self-management.md` | install / self-update / self-uninstall; companion **call site** |

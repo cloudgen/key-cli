@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# tests/run.sh — CI entrypoint for sshd-cli
+# tests/run.sh — CI entrypoint for key-cli
 # =============================================================================
 #
 # GENERAL PURPOSE:
@@ -18,9 +18,9 @@ set -u
 TESTS_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "${TESTS_ROOT}/.." && pwd)
 export TESTS_ROOT REPO_ROOT
-SCRIPT="${REPO_ROOT}/src/sshd-cli"
+SCRIPT="${REPO_ROOT}/src/key-cli"
 export SCRIPT
-APP_NAME="sshd-cli"
+APP_NAME="key-cli"
 export APP_NAME
 
 # shellcheck source=helpers.sh
@@ -29,12 +29,8 @@ export APP_NAME
 . "${TESTS_ROOT}/test_cli.sh"
 # shellcheck source=test_local_lifecycle.sh
 . "${TESTS_ROOT}/test_local_lifecycle.sh"
-# shellcheck source=test_dns.sh
-. "${TESTS_ROOT}/test_dns.sh"
 # shellcheck source=test_config_backup.sh
 . "${TESTS_ROOT}/test_config_backup.sh"
-# shellcheck source=test_ssh_download.sh
-. "${TESTS_ROOT}/test_ssh_download.sh"
 
 PASS=0
 FAIL=0
@@ -45,7 +41,7 @@ _cleanup() {
 }
 trap _cleanup EXIT INT HUP TERM
 
-printf 'sshd-cli CI tests\n'
+printf 'key-cli CI tests\n'
 printf 'script: %s\n' "${SCRIPT}"
 
 if [ ! -f "${SCRIPT}" ]; then
@@ -58,9 +54,7 @@ fi
 
 run_test_cli
 run_test_local_lifecycle
-run_test_dns
 run_test_config_backup
-run_test_ssh_download
 
 printf '\n== summary ==\n'
 printf 'PASS=%s FAIL=%s SKIP=%s\n' "${PASS}" "${FAIL}" "${SKIP}"

@@ -1,8 +1,8 @@
 # =============================================================================
-# tests/test_config_backup.sh — backup-config / sync-config / sudoers (local)
+# tests/test_config_backup.sh — ~/.ssh folder archive backup / restore / sudoers
 # =============================================================================
-# Primary REQs: requirement-sshd-config-backup, requirement-sudoer-json-file,
-# requirement-shell-sudo-command, requirement-domain-sshd
+# Primary REQs: requirement-shell-config-backup, requirement-shell-sudoer,
+# requirement-domain-key
 # TP family: TP-CFG-*
 # =============================================================================
 
@@ -10,198 +10,321 @@
 . "${TESTS_ROOT}/helpers.sh"
 
 run_test_config_backup() {
-    t_header "SSH config deposit (TP-CFG)"
+    t_header "SSH folder archive (TP-CFG)"
 
     require_cmd sh
+    require_cmd tar
     require_cmd grep
 
-    # TP-CFG-01 Type 0 backup-config into SSHD_CLI_ROOT (no sudo)
+    _user=$(id -un 2>/dev/null || echo unknown)
+
+    # TP-CFG-01 Type 0 backup into KEY_CLI_ROOT (no sudo; writable dest)
     ci_isolated_env
-    mkdir -p "${CI_HOME}/.ssh"
-    printf 'Host cfghost\n  HostName example.test\n' > "${CI_HOME}/.ssh/config"
-    chmod 600 "${CI_HOME}/.ssh/config"
-    _store=$(mktemp -d "${TMPDIR:-/tmp}/sshd-store.XXXXXX")
-    _out=$(HOME="${CI_HOME}" SSHD_CLI_ROOT="${_store}" sh "${SCRIPT}" backup-config 2>&1)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly test-key\n' > "${_homes}/${_user}/.ssh/authorized_keys"
+    printf 'Host x\n  HostName example.test\n' > "${_homes}/${_user}/.ssh/config"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    chmod 600 "${_homes}/${_user}/.ssh/authorized_keys" "${_homes}/${_user}/.ssh/config"
+    _day=$(date +%Y%m%d)
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup 2>&1)
     _ec=$?
-    assert_eq "TP-CFG-01 backup-config exit 0" 0 "$_ec"
-    assert_file_exists "TP-CFG-01 store config exists" "${_store}/config"
-    assert_contains "TP-CFG-01 backup-config complete" "$_out" "backup-config complete"
+    assert_eq "TP-CFG-01 backup exit 0" 0 "$_ec"
+    assert_file_exists "TP-CFG-01 archive exists" "${_store}/${_user}/ssh-${_day}-1.tar.gz"
+    assert_contains "TP-CFG-01 backup complete" "$_out" "Backup complete"
+    _mode=$(stat -c '%a' "${_store}/${_user}/ssh-${_day}-1.tar.gz" 2>/dev/null || stat -f '%OLp' "${_store}/${_user}/ssh-${_day}-1.tar.gz")
+    assert_eq "TP-CFG-01 archive mode 600" "600" "${_mode}"
     ci_cleanup_env
 
-    # TP-CFG-02 sync-config writes ~/.ssh/config mode 600
+    # TP-CFG-02 same-day second backup increments N
     ci_isolated_env
-    mkdir -p "${_store}"
-    printf 'Host synchost\n  HostName example.test\n' > "${_store}/config"
-    chmod 644 "${_store}/config"
-    _out=$(HOME="${CI_HOME}" SSHD_CLI_ROOT="${_store}" sh "${SCRIPT}" sync-config 2>&1)
-    _ec=$?
-    assert_eq "TP-CFG-02 sync-config exit 0" 0 "$_ec"
-    assert_file_exists "TP-CFG-02 dest config exists" "${CI_HOME}/.ssh/config"
-    assert_contains "TP-CFG-02 sync-config complete" "$_out" "sync-config complete"
-    _mode=$(stat -c '%a' "${CI_HOME}/.ssh/config" 2>/dev/null || stat -f '%OLp' "${CI_HOME}/.ssh/config")
-    assert_eq "TP-CFG-02 dest mode 600" "600" "${_mode}"
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'k\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    assert_file_exists "TP-CFG-02 first archive" "${_store}/${_user}/ssh-${_day}-1.tar.gz"
+    assert_file_exists "TP-CFG-02 second archive" "${_store}/${_user}/ssh-${_day}-2.tar.gz"
     ci_cleanup_env
 
     # TP-CFG-03 missing source fail-closed + Next
     ci_isolated_env
-    _err=$(HOME="${CI_HOME}" SSHD_CLI_ROOT="${_store}" sh "${SCRIPT}" backup-config 2>&1 >/dev/null)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}"
+    _err=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup 2>&1 >/dev/null)
     _ec=$?
     assert_eq "TP-CFG-03 missing source exit 1" 1 "$_ec"
     assert_contains "TP-CFG-03 missing source Next" "$_err" "Next:"
     ci_cleanup_env
 
-    # TP-CFG-04 Termux: backup-config fail-closed; INFO on menu
+    # TP-CFG-04 Termux: backup fail-closed
     ci_isolated_env
-    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" backup-config 2>&1 >/dev/null)
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" backup 2>&1 >/dev/null)
     _ec=$?
-    assert_eq "TP-CFG-04 Termux backup-config exit 1" 1 "$_ec"
+    assert_eq "TP-CFG-04 Termux backup exit 1" 1 "$_ec"
     assert_contains "TP-CFG-04 Termux not available" "$_err" "not available for termux"
-    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 TERMUX_VERSION=1 sh "${SCRIPT}" 2>&1)
-    assert_contains "TP-CFG-04 Termux menu INFO" "$_out" "backup-config and sync-config not available for termux"
-    assert_not_contains "TP-CFG-04 Termux no backup-config row 15" "$_out" "15."
-    assert_contains "TP-CFG-04 Termux ssh row 12" "$_out" "12."
-    assert_contains "TP-CFG-04 Termux sync-from-remote row 18" "$_out" "18."
     ci_cleanup_env
 
-    # TP-CFG-05 Git Bash menu INFO
+    # TP-CFG-05 restore extracts and --force overwrites
     ci_isolated_env
-    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" 2>&1)
-    assert_contains "TP-CFG-05 Git Bash menu INFO" "$_out" "backup-config and sync-config not available for gitbash"
-    assert_not_contains "TP-CFG-05 Git Bash no backup-config row 15" "$_out" "15."
-    assert_contains "TP-CFG-05 Git Bash ssh row 12" "$_out" "12."
-    assert_contains "TP-CFG-05 Git Bash sync-from-remote row 18" "$_out" "18."
-    _err=$(HOME="${CI_HOME}" MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" sync-config 2>&1 >/dev/null)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'secret-a\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    chmod 600 "${_homes}/${_user}/.ssh/id_ed25519"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    printf 'secret-b\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    _day=$(date +%Y%m%d)
+    _err=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" restore "${_user}" "ssh-${_day}-1.tar.gz" 2>&1 >/dev/null)
     _ec=$?
-    assert_eq "TP-CFG-05 Git Bash sync-config exit 1" 1 "$_ec"
+    assert_eq "TP-CFG-05 restore without --force exit 1" 1 "$_ec"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" --force restore "${_user}" "ssh-${_day}-1.tar.gz" 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-05 restore --force exit 0" 0 "$_ec"
+    assert_contains "TP-CFG-05 restore complete" "$_out" "Restore complete"
+    _got=$(cat "${_homes}/${_user}/.ssh/id_ed25519")
+    assert_eq "TP-CFG-05 restored secret-a" "secret-a" "${_got}"
     ci_cleanup_env
 
-    # TP-CFG-06 print-sudoers --allow-test-local names backup-config only
+    # TP-CFG-06 print-sudoers --allow-test-local names backup (not OS tools)
     ci_isolated_env
     _draft="${CI_HOME}/sudoers.fragment"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${SCRIPT}" --allow-test-local print-sudoers "${_draft}" 2>&1)
+    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" ALLOW_TEST_LOCAL_SUDOERS=1 sh "${SCRIPT}" print-sudoers --allow-test-local "${_draft}" 2>&1)
     _ec=$?
-    assert_eq "TP-CFG-06 print-sudoers test-local exit 0" 0 "$_ec"
-    assert_file_exists "TP-CFG-06 fragment written" "${_draft}"
-    assert_contains "TP-CFG-06 fragment backup-config" "$(cat "${_draft}")" "backup-config"
-    assert_not_contains "TP-CFG-06 no /bin/cp" "$(cat "${_draft}")" "/bin/cp"
-    assert_not_contains "TP-CFG-06 no /bin/chmod" "$(cat "${_draft}")" "/bin/chmod"
+    assert_eq "TP-CFG-06 print-sudoers exit 0" 0 "$_ec"
+    assert_file_exists "TP-CFG-06 draft written" "${_draft}"
+    _txt=$(cat "${_draft}")
+    assert_contains "TP-CFG-06 grant backup" "${_txt}" " backup"
+    assert_contains "TP-CFG-06 grant restore *" "${_txt}" " restore *"
+    assert_contains "TP-CFG-06 --json backup twin" "${_txt}" " --json backup"
+    assert_not_contains "TP-CFG-06 no mkdir" "${_txt}" "/bin/mkdir"
+    assert_not_contains "TP-CFG-06 no tar Cmnd" "${_txt}" "/bin/tar"
     ci_cleanup_env
 
-    # TP-CFG-07 generate-sudoer-request JSON grant
+    # TP-CFG-07 generate-sudoer-request JSON contains backup
     ci_isolated_env
     _jsonf="${CI_HOME}/grant.json"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${SCRIPT}" --allow-test-local generate-sudoer-request "${_jsonf}" 2>&1)
+    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" ALLOW_TEST_LOCAL_SUDOERS=1 sh "${SCRIPT}" generate-sudoer-request --allow-test-local "${_jsonf}" 2>&1)
     _ec=$?
-    assert_eq "TP-CFG-07 generate-sudoer-request exit 0" 0 "$_ec"
-    assert_file_exists "TP-CFG-07 json written" "${_jsonf}"
-    assert_contains "TP-CFG-07 json backup-config" "$(cat "${_jsonf}")" '"backup-config"'
-    assert_contains "TP-CFG-07 json service" "$(cat "${_jsonf}")" "\"service\":\"${APP_NAME}\""
+    assert_eq "TP-CFG-07 generate exit 0" 0 "$_ec"
+    _txt=$(cat "${_jsonf}")
+    assert_contains "TP-CFG-07 json backup" "${_txt}" '"backup"'
+    assert_not_contains "TP-CFG-07 json no mkdir" "${_txt}" "mkdir"
     ci_cleanup_env
 
-    # TP-CFG-08 restore-config is not a verb
-    _err=$(sh "${SCRIPT}" restore-config 2>&1 >/dev/null)
-    _ec=$?
-    assert_eq "TP-CFG-08 restore-config exit 1" 1 "$_ec"
-    assert_contains "TP-CFG-08 restore-config unknown" "$_err" "Unknown command"
-
-    # TP-CFG-09 Windows cmd menu INFO
+    # TP-CFG-08 on-behalf other user refused for this login
     ci_isolated_env
-    _out=$(printf '%s\n' '1' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 OS=Windows_NT COMSPEC='C:\\Windows\\system32\\cmd.exe' env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
-    assert_contains "TP-CFG-09 Windows cmd menu INFO" "$_out" "backup-config and sync-config not available for windows-cmd"
-    assert_contains "TP-CFG-09 Windows cmd ssh row 12" "$_out" "12."
-    assert_contains "TP-CFG-09 Windows cmd sync-from-remote row 18" "$_out" "18."
-    ci_cleanup_env
-
-    # TP-CFG-10..15 sync-from-remote (fake scp; never a real SSH session)
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/bin" "${CI_HOME}/remote-store"
-    printf 'Host remotehost\n  HostName example.test\n' > "${CI_HOME}/remote-store/config"
-    _fake_scp="${CI_HOME}/bin/scp"
-    _scp_log="${CI_HOME}/scp.log"
-    : > "${_scp_log}"
-    cat > "${_fake_scp}" <<'FAKESCP'
-#!/bin/sh
-fix="${SSHD_CLI_REMOTE_FIXTURE:-}"
-log="${SSHD_CLI_SCP_LOG:-}"
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -o) shift 2; continue ;;
-        -*) shift; continue ;;
-        *) break ;;
-    esac
-done
-src="${1:-}"
-dest="${2:-}"
-[ -n "${src}" ] && [ -n "${dest}" ] || exit 1
-if [ -n "${log}" ]; then
-    printf '%s\n' "${src}" >> "${log}"
-fi
-base="${src##*:}"
-base="${base##*/}"
-if [ -z "${fix}" ] || [ ! -f "${fix}/${base}" ]; then
-    exit 1
-fi
-cp "${fix}/${base}" "${dest}" || exit 1
-exit 0
-FAKESCP
-    chmod 0755 "${_fake_scp}"
-
-    _err=$(HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        sh "${SCRIPT}" sync-from-remote 2>&1 >/dev/null)
-    assert_eq "TP-CFG-10 missing spec exit 1" 1 "$?"
-    assert_contains "TP-CFG-10 Next USER@HOST" "${_err}" "sync-from-remote USER@HOST"
-
-    _err=$(HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        sh "${SCRIPT}" sync-from-remote 'bad;rm' 2>&1 >/dev/null)
-    assert_eq "TP-CFG-11 invalid spec exit 1" 1 "$?"
-    _err=$(HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        sh "${SCRIPT}" sync-from-remote 'a@b@c' 2>&1 >/dev/null)
-    assert_eq "TP-CFG-11 extra @ exit 1" 1 "$?"
-
-    : > "${_scp_log}"
-    _out=$(HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        SSHD_CLI_SCP_LOG="${_scp_log}" SSHD_CLI_REMOTE_ROOT="/var/sshd-cli" \
-        sh "${SCRIPT}" sync-from-remote operator@host.example.test 2>/dev/null)
-    assert_eq "TP-CFG-12 user@host exit 0" 0 "$?"
-    assert_contains "TP-CFG-12 complete" "${_out}" "sync-from-remote complete"
-    assert_file_exists "TP-CFG-12 dest config" "${CI_HOME}/.ssh/config"
-    assert_contains "TP-CFG-12 scp src" "$(cat "${_scp_log}")" "operator@host.example.test:/var/sshd-cli/config"
-    _mode=$(stat -c '%a' "${CI_HOME}/.ssh/config" 2>/dev/null || stat -f '%OLp' "${CI_HOME}/.ssh/config")
-    assert_eq "TP-CFG-13 dest mode 600" "600" "${_mode}"
-
-    _pref="${CI_HOME}/.local/sshd-cli/preferred-remote"
-    assert_file_exists "TP-CFG-14 preferred-remote leaf" "${_pref}"
-    assert_eq "TP-CFG-14 stored SPEC" "operator@host.example.test" "$(tr -d '\r\n' < "${_pref}")"
-    _pmode=$(stat -c '%a' "${_pref}" 2>/dev/null || stat -f '%OLp' "${_pref}")
-    assert_eq "TP-CFG-14 preferred-remote mode 600" "600" "${_pmode}"
-
-    rm -f "${CI_HOME}/.ssh/config"
-    : > "${_scp_log}"
-    _out=$(printf '\n' | HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        SSHD_CLI_SCP_LOG="${_scp_log}" SSHD_CLI_REMOTE_ROOT="/var/sshd-cli" \
-        TTY=1 INTERACTIVE=1 sh "${SCRIPT}" sync-from-remote 2>/dev/null)
-    assert_eq "TP-CFG-15 TTY empty uses stored default exit 0" 0 "$?"
-    assert_contains "TP-CFG-15 reused stored SPEC in scp" "$(cat "${_scp_log}")" "operator@host.example.test:/var/sshd-cli/config"
-    assert_file_exists "TP-CFG-15 dest config from default" "${CI_HOME}/.ssh/config"
-
-    _j=$(HOME="${CI_HOME}" SSHD_CLI_SCP="${_fake_scp}" SSHD_CLI_REMOTE_FIXTURE="${CI_HOME}/remote-store" \
-        SSHD_CLI_REMOTE_ROOT="/var/sshd-cli" \
-        sh "${SCRIPT}" --json sync-from-remote host.example.test 2>/dev/null)
-    assert_contains "TP-CFG-16 json type" "${_j}" '"type":"sync-from-remote"'
-    assert_contains "TP-CFG-16 json host" "${_j}" '"host":"host.example.test"'
-
-    # TP-CFG-17 TTY sudoers submenu unknown choice redisplays
-    _out=$(printf '%s\n' '1' '17' '88' '0' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME sh "${SCRIPT}" 2>&1)
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/alice/.ssh" "${_homes}/${_user}/.ssh"
+    printf 'x\n' > "${_homes}/alice/.ssh/id_ed25519"
+    _err=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup alice 2>&1 >/dev/null)
     _ec=$?
-    assert_eq "TP-CFG-17 sudoers unknown then Back then Exit 9 exit 0" 0 "$_ec"
-    assert_contains "TP-CFG-17 unknown sudoers named" "${_out}" "Unknown sudoers choice '88'"
-    _n=$(t_count_substr "${_out}" "sudoers (grant and drafts)")
-    assert_eq "TP-CFG-17 redisplays sudoers menu" "2" "$_n"
-
+    assert_eq "TP-CFG-08 on-behalf exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-08 on-behalf refused" "$_err" "Cannot act on behalf"
     ci_cleanup_env
 
-    if [ -n "${_store:-}" ] && [ -d "${_store}" ]; then
-        rm -rf "${_store}"
+    # TP-CFG-09 restore list
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'k\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" restore list 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-09 restore list exit 0" 0 "$_ec"
+    assert_contains "TP-CFG-09 list names archive" "$_out" "ssh-"
+    ci_cleanup_env
+
+    # TP-CFG-10 auth-keys add this login takes a global backup first
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyMaterialOnly laptop\n' > "${CI_HOME}/laptop.pub"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys add "${CI_HOME}/laptop.pub" 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-10 auth-keys add exit 0" 0 "$_ec"
+    assert_file_exists "TP-CFG-10 authorized_keys" "${_homes}/${_user}/.ssh/authorized_keys"
+    assert_contains "TP-CFG-10 key appended" "$(cat "${_homes}/${_user}/.ssh/authorized_keys")" "laptop"
+    assert_contains "TP-CFG-10 add ran global backup" "$_out" "Backup complete"
+    _day=$(date +%Y%m%d)
+    _narch=$(find "${_store}/${_user}" -name "ssh-${_day}-*.tar.gz" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${_narch}" -ge 1 ]; then
+        t_pass "TP-CFG-10 global archive exists after add"
+    else
+        t_fail "TP-CFG-10 global archive exists after add (count=${_narch})"
     fi
-    unset _store _out _ec _err _mode _draft _jsonf _fake_scp _scp_log _pref _pmode _j _n
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys add "${CI_HOME}/laptop.pub" 2>&1)
+    assert_contains "TP-CFG-10 duplicate no-op" "$_out" "already"
+    ci_cleanup_env
+
+    # TP-CFG-11 Termux: auth-keys add fail-closed (global backup required)
+    ci_isolated_env
+    mkdir -p "${CI_HOME}/.ssh"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyMaterialOnly laptop\n' > "${CI_HOME}/laptop.pub"
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" auth-keys add "${CI_HOME}/laptop.pub" 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-11 Termux add exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-11 Termux add needs global backup" "$_err" "not available for termux"
+    ci_cleanup_env
+
+    # TP-CFG-12 Git Bash: backup fail-closed
+    ci_isolated_env
+    _err=$(HOME="${CI_HOME}" MSYSTEM=MINGW64 env -u TERMUX_VERSION sh "${SCRIPT}" backup 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-12 Git Bash backup exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-12 Git Bash not available" "$_err" "not available for gitbash"
+    ci_cleanup_env
+
+    # TP-CFG-13 Windows cmd: backup fail-closed
+    ci_isolated_env
+    _err=$(HOME="${CI_HOME}" env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME OS=Windows_NT COMSPEC='C:\\Windows\\system32\\cmd.exe' sh "${SCRIPT}" backup 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-13 Windows cmd backup exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-13 Windows cmd not available" "$_err" "not available for windows-cmd"
+    ci_cleanup_env
+
+    # TP-CFG-15 setup is root-only (fail closed off-root; skip host mutate if already root)
+    _uid=$(id -u 2>/dev/null || echo 1)
+    if [ "${_uid}" -eq 0 ]; then
+        t_skip "TP-CFG-15 setup non-root (suite running as root)"
+    else
+        _err=$(sh "${SCRIPT}" setup 2>&1 >/dev/null)
+        _ec=$?
+        assert_eq "TP-CFG-15 setup non-root exit 1" 1 "$_ec"
+        assert_contains "TP-CFG-15 setup Next root login" "$_err" "root login"
+    fi
+
+    # TP-CFG-16 remove-lpu needs --force off-TTY; non-root still fail closed first
+    if [ "${_uid}" -eq 0 ]; then
+        _err=$(sh "${SCRIPT}" --json remove-lpu 2>&1 >/dev/null)
+        _ec=$?
+        assert_eq "TP-CFG-16 remove-lpu json no-force exit 1" 1 "$_ec"
+        assert_contains "TP-CFG-16 remove-lpu needs --force" "$_err" "--force"
+    else
+        _err=$(sh "${SCRIPT}" remove-lpu 2>&1 >/dev/null)
+        _ec=$?
+        assert_eq "TP-CFG-16 remove-lpu non-root exit 1" 1 "$_ec"
+        assert_contains "TP-CFG-16 remove-lpu Next root login" "$_err" "root login"
+    fi
+    unset _uid
+
+    # TP-CFG-17 TTY sudoers submenu unknown choice warns and redisplays
+    ci_isolated_env
+    _out=$(printf '%s\n' '1' '14' 'xyz' '0' '0' '9' | HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" TTY=1 env -u TERMUX_VERSION -u MSYSTEM sh "${SCRIPT}" 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-17 sudoers unknown then Back exit 0" 0 "$_ec"
+    assert_contains "TP-CFG-17 unknown sudoers token named" "$_out" "Unknown sudoers choice 'xyz'"
+    _n=$(t_count_substr "$_out" "generate-sudoer-request")
+    if [ "${_n}" -ge 2 ]; then
+        t_pass "TP-CFG-17 redisplays sudoers list"
+    else
+        t_fail "TP-CFG-17 redisplays sudoers list (count=${_n})"
+    fi
+    ci_cleanup_env
+
+    # TP-CFG-18 nested backup from auth-keys add --json emits one JSON object
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyMaterialOnly laptop\n' > "${CI_HOME}/laptop.pub"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" --json auth-keys add "${CI_HOME}/laptop.pub" 2>/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-18 auth-keys add json exit 0" 0 "$_ec"
+    _n=$(printf '%s\n' "$_out" | grep -c '"type":' || true)
+    assert_eq "TP-CFG-18 one JSON object" "1" "${_n}"
+    assert_not_contains "TP-CFG-18 no nested backup type" "$_out" '"type":"backup"'
+    ci_cleanup_env
+
+    # TP-CFG-19 backup reports verify counts (no extract)
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'k\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup 2>&1)
+    assert_contains "TP-CFG-19 verify source_files" "$_out" "source_files="
+    assert_contains "TP-CFG-19 verify members" "$_out" "members="
+    assert_contains "TP-CFG-19 verify size" "$_out" "size="
+    _fn=$(sed -n '/^key_cmd_backup()/,/^key_resolve_archive()/p' "${SCRIPT}")
+    assert_not_contains "TP-CFG-19 backup does not extract to verify" "${_fn}" 'tar -xzf'
+    unset _fn
+    ci_cleanup_env
+
+    # TP-CFG-20 restore dest directory mode 0700
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'secret-a\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    _day=$(date +%Y%m%d)
+    rm -rf "${_homes}/${_user}/.ssh"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" --force restore "${_user}" "ssh-${_day}-1.tar.gz" >/dev/null 2>&1
+    _mode=$(stat -c '%a' "${_homes}/${_user}/.ssh" 2>/dev/null || stat -f '%OLp' "${_homes}/${_user}/.ssh")
+    assert_eq "TP-CFG-20 restored .ssh mode 700" "700" "${_mode}"
+    ci_cleanup_env
+
+    # TP-CFG-21 auth-keys list
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyMaterialOnly laptop\n' > "${CI_HOME}/laptop.pub"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys add "${CI_HOME}/laptop.pub" >/dev/null 2>&1
+    _out=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" auth-keys list 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-21 auth-keys list exit 0" 0 "$_ec"
+    assert_contains "TP-CFG-21 list names authorized_keys" "$_out" "authorized_keys"
+    assert_contains "TP-CFG-21 list shows laptop comment" "$_out" "laptop"
+    ci_cleanup_env
+
+    # TP-CFG-22 TTY restore picker unknown choice warns and redisplays
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}/${_user}/.ssh"
+    printf 'k\n' > "${_homes}/${_user}/.ssh/id_ed25519"
+    chmod 700 "${_homes}/${_user}/.ssh"
+    HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup >/dev/null 2>&1
+    _out=$(printf '%s\n' 'xyz' '0' | HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" TTY=1 sh "${SCRIPT}" restore 2>&1)
+    _ec=$?
+    assert_eq "TP-CFG-22 restore unknown then Back exit 0" 0 "$_ec"
+    assert_contains "TP-CFG-22 unknown restore token named" "$_out" "Unknown restore choice 'xyz'"
+    _n=$(t_count_substr "$_out" "Choose an archive number:")
+    assert_eq "TP-CFG-22 redisplays restore picker" "2" "$_n"
+    ci_cleanup_env
+
+    # TP-CFG-23 path-unsafe username fail closed
+    ci_isolated_env
+    _homes="${CI_HOME}/homes"
+    _store="${CI_HOME}/store"
+    mkdir -p "${_homes}"
+    _err=$(HOME="${CI_HOME}" KEY_HOME_ROOT="${_homes}" KEY_CLI_ROOT="${_store}" sh "${SCRIPT}" backup '../etc' 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-23 slash-dot username exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-23 invalid username" "$_err" "Invalid username"
+    ci_cleanup_env
+
+    # TP-CFG-24 Termux: print-sudoers fail closed
+    ci_isolated_env
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" print-sudoers 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-24 Termux print-sudoers exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-24 Termux print-sudoers not available" "$_err" "not available for termux"
+    ci_cleanup_env
 }

@@ -4,8 +4,8 @@
 # Primary REQs: requirement-shell-self-management, requirement-shell-idempotency,
 # requirement-shell-interactive-vs-noninteractive, requirement-shell-termux-ish,
 # requirement-shell-automatic-checksum (TP-CSUM-01),
-# requirement-domain-sshd (TP-SSHD-02)
-# TP family: TP-LC-* (incl. 20–22 BASHRC env) / TP-CSUM-01 / TP-SSHD-02 / TP-TX-08..16
+# requirement-domain-key
+# TP family: TP-LC-* (incl. 20–22 BASHRC env) / TP-CSUM-01
 # =============================================================================
 
 # shellcheck source=helpers.sh
@@ -327,81 +327,17 @@ run_test_local_lifecycle() {
     HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${CI_USER_BIN}/${APP_NAME}" self-uninstall --force >/dev/null 2>&1 || true
     ci_cleanup_env
 
-    # TP-LC-16 Termux mock: pkg install -y openssh termux-auth
-    # TP-LC-17 install ends by starting sshd (stub daemon)
+    # TP-LC-16 Termux mock: install succeeds without wrapping pkg openssh
     ci_isolated_env
     PREFIX="${CI_HOME}/usr"
-    mkdir -p "${PREFIX}/bin" "${PREFIX}/etc/ssh" "${PREFIX}/var/run" "${CI_HOME}/stubbin"
-    printf '%s\n' 'Port 8022' "PidFile ${PREFIX}/var/run/sshd.pid" > "${PREFIX}/etc/ssh/sshd_config"
-    : > "${PREFIX}/etc/ssh/ssh_host_ed25519_key"
-    cat > "${PREFIX}/bin/sshd" <<EOF
-#!/bin/sh
-if [ "\$1" = "-t" ]; then
-    exit 0
-fi
-nohup sleep 120 >/dev/null 2>&1 &
-echo \$! > "${PREFIX}/var/run/sshd.pid"
-exit 0
-EOF
-    chmod +x "${PREFIX}/bin/sshd"
-    printf '%s\n' '#!/bin/sh' "printf '%s\\n' \"\$*\" >> \"${CI_HOME}/pkg-args.log\"" 'exit 0' > "${CI_HOME}/stubbin/pkg"
+    mkdir -p "${PREFIX}/bin" "${CI_HOME}/stubbin"
+    printf '%s\n' '#!/bin/sh' "echo CALLED >> \"${CI_HOME}/pkg-called.log\"" 'exit 1' > "${CI_HOME}/stubbin/pkg"
     chmod +x "${CI_HOME}/stubbin/pkg"
     _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" install 2>&1)
     _ec=$?
     assert_eq "TP-LC-16 Termux mock install exit 0" 0 "$_ec"
-    _pkg_args=$(cat "${CI_HOME}/pkg-args.log" 2>/dev/null || true)
-    assert_contains "TP-LC-16 pkg install -y" "$_pkg_args" "install -y openssh termux-auth"
-    assert_contains "TP-LC-17 install started sshd" "$_out" "sshd started"
-    assert_contains "TP-SSHD-02 background daemon" "$_out" "background daemon"
-    assert_contains "TP-SSHD-02 after a reboot" "$_out" "After a reboot"
-    assert_contains "TP-SSHD-02 Termux:Boot operator hook" "$_out" "Termux:Boot"
-    assert_file_exists "TP-LC-17 stub pidfile" "${PREFIX}/var/run/sshd.pid"
-    _stub_pid=$(tr -d ' \n\r\t' < "${PREFIX}/var/run/sshd.pid" 2>/dev/null || true)
-    if [ -n "${_stub_pid}" ] && kill -0 "${_stub_pid}" 2>/dev/null; then
-        t_pass "TP-LC-17 stub sshd pid is live"
-        kill "${_stub_pid}" 2>/dev/null || true
-    else
-        t_fail "TP-LC-17 stub sshd pid is live"
-    fi
-    HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${CI_USER_BIN}/${APP_NAME}" self-uninstall --force >/dev/null 2>&1 || true
-    ci_cleanup_env
-
-    # TP-SSHD-15 self-update is CLI-only: host sshd -t failure must not fail CLI place
-    ci_isolated_env
-    PREFIX="${CI_HOME}/usr"
-    mkdir -p "${PREFIX}/bin" "${PREFIX}/etc/ssh" "${PREFIX}/var/run" "${CI_HOME}/stubbin"
-    printf '%s\n' 'Port 8022' "PidFile ${PREFIX}/var/run/sshd.pid" > "${PREFIX}/etc/ssh/sshd_config"
-    : > "${PREFIX}/etc/ssh/ssh_host_ed25519_key"
-    cat > "${PREFIX}/bin/sshd" <<EOF
-#!/bin/sh
-if [ "\$1" = "-t" ]; then
-    exit 0
-fi
-nohup sleep 120 >/dev/null 2>&1 &
-echo \$! > "${PREFIX}/var/run/sshd.pid"
-exit 0
-EOF
-    chmod +x "${PREFIX}/bin/sshd"
-    printf '%s\n' '#!/bin/sh' "printf '%s\\n' \"\$*\" >> \"${CI_HOME}/pkg-args.log\"" 'exit 0' > "${CI_HOME}/stubbin/pkg"
-    chmod +x "${CI_HOME}/stubbin/pkg"
-    HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" install >/dev/null 2>&1
-    cat > "${PREFIX}/bin/sshd" <<EOF
-#!/bin/sh
-echo CALLED_T >> "${CI_HOME}/sshd-t.log"
-if [ "\$1" = "-t" ]; then
-    echo "Missing privilege separation directory: /run/sshd" >&2
-    exit 1
-fi
-exit 1
-EOF
-    chmod +x "${PREFIX}/bin/sshd"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 SCRIPT_URL="${SCRIPT_URL}" sh "${SCRIPT}" --force self-update 2>&1)
-    _ec=$?
-    assert_eq "TP-SSHD-15 self-update exit 0 despite sshd -t fail" 0 "$_ec"
-    assert_not_contains "TP-SSHD-15 no sshd_config ERROR" "$_out" "sshd refused the config"
-    assert_not_contains "TP-SSHD-15 no /run/sshd ERROR" "$_out" "Missing privilege separation directory"
-    assert_file_exists "TP-SSHD-15 CLI still installed" "${CI_USER_BIN}/${APP_NAME}"
-    assert_file_missing "TP-SSHD-15 sshd -t not invoked" "${CI_HOME}/sshd-t.log"
+    assert_file_missing "TP-LC-16 pkg not called for openssh" "${CI_HOME}/pkg-called.log"
+    assert_file_exists "TP-LC-16 binary placed" "${CI_USER_BIN}/${APP_NAME}"
     HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${CI_USER_BIN}/${APP_NAME}" self-uninstall --force >/dev/null 2>&1 || true
     ci_cleanup_env
 
@@ -428,115 +364,5 @@ EOF
     assert_file_missing "TP-LC-19 pkg not called on Windows cmd" "${CI_HOME}/pkg-called.log"
     HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${CI_USER_BIN}/${APP_NAME}" self-uninstall --force >/dev/null 2>&1 || true
     ci_cleanup_env
-
-    # --- Android wake lock (TP-TX-08..16) ---
-
-    # TP-TX-08 not Termux: termux-wake-lock is not invoked
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/stubbin"
-    printf '%s\n' '#!/bin/sh' "echo CALLED >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" env -u TERMUX_VERSION sh "${SCRIPT}" wake-lock 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-08 non-Termux wake-lock exit 0" 0 "$_ec"
-    assert_contains "TP-TX-08 non-Termux no-op text" "$_out" "Not Termux"
-    assert_file_missing "TP-TX-08 termux-wake-lock not called" "${CI_HOME}/wake-lock-called.log"
-    ci_cleanup_env
-
-    # TP-TX-09 Termux mock start invokes termux-wake-lock
-    ci_isolated_env
-    tx_prep_sshd_stub
-    printf '%s\n' '#!/bin/sh' "printf '%s\\n' \"\$*\" >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" start 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-09 Termux start exit 0" 0 "$_ec"
-    assert_file_exists "TP-TX-09 start called termux-wake-lock" "${CI_HOME}/wake-lock-called.log"
-    assert_contains "TP-TX-09 start names wake lock" "$_out" "wake lock"
-    _stub_pid=$(tr -d ' \n\r\t' < "${PREFIX}/var/run/sshd.pid" 2>/dev/null || true)
-    # already-running start still re-acquires
-    : > "${CI_HOME}/wake-lock-called.log"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" start 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-09 already-running start exit 0" 0 "$_ec"
-    assert_file_exists "TP-TX-09 already-running re-acquires wake lock" "${CI_HOME}/wake-lock-called.log"
-    if [ -n "${_stub_pid}" ]; then
-        kill "${_stub_pid}" 2>/dev/null || true
-    fi
-    ci_cleanup_env
-
-    # TP-TX-10 Termux mock wake-lock verb
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/stubbin"
-    printf '%s\n' '#!/bin/sh' "echo CALLED >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" wake-lock 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-10 Termux wake-lock verb exit 0" 0 "$_ec"
-    assert_file_exists "TP-TX-10 verb called termux-wake-lock" "${CI_HOME}/wake-lock-called.log"
-    assert_contains "TP-TX-10 verb success text" "$_out" "Android wake lock acquired"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" wake-lock 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-10 second wake-lock idempotent exit 0" 0 "$_ec"
-    ci_cleanup_env
-
-    # TP-TX-11 Git Bash: termux-wake-lock not invoked
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/stubbin"
-    printf '%s\n' '#!/bin/sh' "echo CALLED >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" env -u TERMUX_VERSION MSYSTEM=MINGW64 sh "${SCRIPT}" wake-lock 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-11 Git Bash wake-lock exit 0" 0 "$_ec"
-    assert_file_missing "TP-TX-11 Git Bash helper not called" "${CI_HOME}/wake-lock-called.log"
-    ci_cleanup_env
-
-    # TP-TX-12 Windows cmd: termux-wake-lock not invoked
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/stubbin"
-    printf '%s\n' '#!/bin/sh' "echo CALLED >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock"
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" env -u TERMUX_VERSION -u MSYSTEM -u WSL_DISTRO_NAME OS=Windows_NT COMSPEC='C:\\Windows\\system32\\cmd.exe' sh "${SCRIPT}" wake-lock 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-12 Windows cmd wake-lock exit 0" 0 "$_ec"
-    assert_file_missing "TP-TX-12 Windows cmd helper not called" "${CI_HOME}/wake-lock-called.log"
-    ci_cleanup_env
-
-    # TP-TX-13 Termux start, helper missing: start still succeeds; Next names wake-lock
-    ci_isolated_env
-    tx_prep_sshd_stub
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" start 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-13 start without helper exit 0" 0 "$_ec"
-    assert_contains "TP-TX-13 start still started sshd" "$_out" "sshd started"
-    assert_contains "TP-TX-13 warn names Next wake-lock" "$_out" "wake-lock"
-    _stub_pid=$(tr -d ' \n\r\t' < "${PREFIX}/var/run/sshd.pid" 2>/dev/null || true)
-    if [ -n "${_stub_pid}" ]; then
-        kill "${_stub_pid}" 2>/dev/null || true
-    fi
-    ci_cleanup_env
-
-    # TP-TX-14 Termux wake-lock verb, helper missing: fail closed + Next
-    ci_isolated_env
-    mkdir -p "${CI_HOME}/stubbin"
-    _err=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PATH="${CI_HOME}/stubbin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" wake-lock 2>&1 >/dev/null)
-    _ec=$?
-    assert_eq "TP-TX-14 missing helper exit 1" 1 "$_ec"
-    assert_contains "TP-TX-14 Next pkg install termux-tools" "$_err" "pkg install termux-tools"
-    assert_contains "TP-TX-14 Next names wake-lock" "$_err" "wake-lock"
-    ci_cleanup_env
-
-    # TP-TX-16 stop does not invoke termux-wake-unlock
-    ci_isolated_env
-    tx_prep_sshd_stub
-    printf '%s\n' '#!/bin/sh' "echo LOCK >> \"${CI_HOME}/wake-lock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-lock"
-    printf '%s\n' '#!/bin/sh' "echo UNLOCK >> \"${CI_HOME}/wake-unlock-called.log\"" 'exit 0' > "${CI_HOME}/stubbin/termux-wake-unlock"
-    chmod +x "${CI_HOME}/stubbin/termux-wake-lock" "${CI_HOME}/stubbin/termux-wake-unlock"
-    HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" start >/dev/null 2>&1
-    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" PREFIX="${PREFIX}" PATH="${CI_HOME}/stubbin:${PREFIX}/bin:${PATH}" TERMUX_VERSION=1 sh "${SCRIPT}" stop 2>&1)
-    _ec=$?
-    assert_eq "TP-TX-16 stop exit 0" 0 "$_ec"
-    assert_file_missing "TP-TX-16 stop does not unlock" "${CI_HOME}/wake-unlock-called.log"
-    ci_cleanup_env
-
 }
+

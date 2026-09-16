@@ -1,12 +1,14 @@
 **file**: docs/requirements/requirement-domain-sshd.md  
-**Status**: Active (Version 1.19.2)  
+**Status**: Superseded (Version 1.19.2 → replaced by `requirement-domain-key` 2.0.0)  
 **Area**: domain  
 **Key**: `requirement-domain-sshd`  
 **Philosophy**: CIAO **v2.10.2** / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered / Over-protect)
 
 ## 1. Purpose
 
-This is the **one Active domain SSOT** for **sshd-cli**. The product **purpose** is to **simplify Termux to install sshd**. OpenSSH **sshd** (the SSH server) plus this login’s **authorized_keys** are the domain; Termux is the first home and ordinary POSIX Linux is the second. Type 0 install/self-update/self-uninstall stay on the shell lifecycle requirements. This file owns specialized subcommands, features, help rows, and about fields.
+**Superseded.** The Active domain SSOT is `requirement-domain-key.md` (key-cli backup/restore of `~/.ssh`; no OpenSSH sshd/client). This file is kept as history only.
+
+This was the **one Active domain SSOT** for **sshd-cli**. The product **purpose** is to **simplify Termux to install sshd**. OpenSSH **sshd** (the SSH server) plus this login’s **authorized_keys** are the domain; Termux is the first home and ordinary POSIX Linux is the second. Type 0 install/self-update/self-uninstall stay on the shell lifecycle requirements. This file owns specialized subcommands, features, help rows, and about fields.
 
 Bootstrap origin is **selfmanaged** (A → B only). Domain law lives here on B, never on A.
 
@@ -549,16 +551,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 | TP family / ID | Suite | Status |
 |----------------|-------|--------|
-| **TP-CLI-04**, **TP-CLI-06**, **TP-CLI-14**, **TP-CLI-15** | `tests/test_cli.sh` | have |
-| **TP-SSHD-01**, **TP-SSHD-03**, **TP-SSHD-04**, **TP-SSHD-05**, **TP-SSHD-06**, **TP-SSHD-07**, **TP-SSHD-08** | `tests/test_cli.sh` | have |
-| **TP-SSHD-09** .. **TP-SSHD-14**, **TP-SSHD-16** | `tests/test_cli.sh` | have |
-| **TP-SSHD-15** | `tests/test_local_lifecycle.sh` | have |
-| **TP-LC-16**, **TP-LC-17**, **TP-SSHD-02**, **TP-TX-09**, **TP-TX-13**, **TP-TX-16** | `tests/test_local_lifecycle.sh` | have |
-| **TP-DNS-01** .. **TP-DNS-49** | `tests/test_dns.sh` | have |
-| **TP-SSH-01** .. **TP-SSH-09** | `tests/test_ssh_download.sh` | have |
-| **TP-DL-01** .. **TP-DL-17** | `tests/test_ssh_download.sh` | have |
-| **TP-CFG-17** | `tests/test_config_backup.sh` | have |
-| **TP-UL-01** .. **TP-UL-18** | `tests/test_ssh_download.sh` | **have** |
+| **TP-SSHD-*** · **TP-DNS-*** · **TP-SSH-*** · **TP-DL-*** · **TP-UL-*** | (suites deleted) | n/a — superseded by `requirement-domain-key` |
 
 **Matrix:** `reviews/requirement-test-matrix.md`  
 **Map:** `reviews/test-plan.md`

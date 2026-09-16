@@ -4,61 +4,61 @@
 
 ## 1. Purpose
 
-When you run `sshd-cli` with **nothing after the name**, a **terminal** opens the numbered sshd list; a **pipe** (`curl … | sh`) installs the program (or says it is already there). It must not print help.
+When you run `key-cli` with **nothing after the name**, a **terminal** opens the numbered keys menu; a **pipe** (`curl … | sh`) installs the program (or says it is already there). It must not print help.
 
 Catalog: interactive empty argv → menu; non-interactive → Type O install-ensure (not Type N help).
 
 ### 1.0 Product type (template dual-model)
 
-| Field | Value for sshd-cli |
+| Field | Value for key-cli |
 |-------|------------------------|
 | **Empty-argv type** | **Split:** interactive → domain **menu**; non-interactive → **Type O install-ensure** (not Type N help) |
-| **Rationale** | Product advertises `curl … \| sh` one-liner install (pipe = no TTY). On a real terminal, no arguments opens the numbered sshd list. |
+| **Rationale** | Product advertises `curl … \| sh` one-liner install (pipe = no TTY). On a real terminal, no arguments opens the numbered keys menu. |
 
 Type N (non-online-install → empty argv = help) does **not** apply to this product.
 
 It defines what happens when the tool is invoked with **no command and no flags**, including the classic one-liner:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli | /bin/sh
+curl -fsSL https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli | /bin/sh
 ```
 
-**Non-interactive** empty argv (pipe, CI, `--quiet` / `--json` env, no TTY) means **install-ensure** for three detect cases. **Interactive** empty argv (real terminal on stdin and stdout, not quiet/json) means the domain **menu** (`sshd_cmd_menu`) — dual mention `requirement-domain-sshd`.
+**Non-interactive** empty argv (pipe, CI, `--quiet` / `--json` env, no TTY) means **install-ensure** for three detect cases. **Interactive** empty argv (real terminal on stdin and stdout, not quiet/json) means the domain **menu** (`key_cmd_menu`) — dual mention `requirement-domain-sshd`.
 
 | Case | Meaning |
 |------|---------|
 | **Not installed** | No managed binary at the resolved install path(s) |
-| **Installed (local)** | Managed binary at the user path (`USER_BIN` / `${HOME}/.local/bin/sshd-cli`) |
-| **Installed (global)** | Managed binary at the global path (`GLOBAL_BIN` / `/usr/local/bin/sshd-cli`) |
+| **Installed (local)** | Managed binary at the user path (`USER_BIN` / `${HOME}/.local/bin/key-cli`) |
+| **Installed (global)** | Managed binary at the global path (`GLOBAL_BIN` / `/usr/local/bin/key-cli`) |
 
 **Scope:** Empty-argv routing, detect cases (global / local / absent), messages, force boundary, exit status, interaction with TTY / quiet / json.  
 **Out of scope (own requirements):** Full command catalog (`requirement-shell-cli-interface.md`); download/checksum detail (`requirement-shell-automatic-checksum.md`); full self-update/uninstall lifecycle (`requirement-shell-self-management.md`); output function catalog (`requirement-shell-output-requirements.md`); general idempotency matrix beyond empty-argv rows (`requirement-shell-idempotency.md`).
 
 ### 1.1 Human-facing
 
-**In one sentence:** If you run `sshd-cli` with **no arguments** on a **terminal**, you get the numbered sshd list; if you run it from a **pipe** (`curl … | sh`), it **places itself** (or says it is already installed) — it must not print help.
+**In one sentence:** If you run `key-cli` with **no arguments** on a **terminal**, you get the numbered keys menu; if you run it from a **pipe** (`curl … | sh`), it **places itself** (or says it is already installed) — it must not print help.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | A person at a terminal, or a `curl \| sh` pipe with nobody to answer | `sshd-cli` on a TTY · `curl -fsSL …/sshd-cli \| /bin/sh` |
-| The other role | Explicit verbs: help, force reinstall, uninstall, `menu` | `sshd-cli help` · `sshd-cli install --force` · `sshd-cli menu` |
+| You / this login | A person at a terminal, or a `curl \| sh` pipe with nobody to answer | `key-cli` on a TTY · `curl -fsSL …/key-cli \| /bin/sh` |
+| The other role | Explicit verbs: help, force reinstall, uninstall, `menu` | `key-cli help` · `key-cli install --force` · `key-cli menu` |
 | Not this file | Full command list, checksum, update/uninstall, output printers | `requirement-shell-cli-interface.md` and peers |
 
 | Includes | Excludes |
 |----------|----------|
-| Zero tokens (`$# -eq 0`): pipe one-liner, `./sshd-cli` with nothing after the name | `sshd-cli --json` / `sshd-cli --quiet` (those have argv; default command stays help unless you also pass `install`) |
+| Zero tokens (`$# -eq 0`): pipe one-liner, `./key-cli` with nothing after the name | `key-cli --json` / `key-cli --quiet` (those have argv; default command stays help unless you also pass `install`) |
 | Interactive empty argv → numbered domain menu; non-interactive → install-ensure | Type N help-default; hanging a menu under a pipe |
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `./sshd-cli` | Program file people install | Live empty-argv behavior |
-| `sshd-cli` with no args | Command | Terminal → menu; pipe → install-ensure |
+| `./key-cli` | Program file people install | Live empty-argv behavior |
+| `key-cli` with no args | Command | Terminal → menu; pipe → install-ensure |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| First install from the internet | No program is on disk yet. The pipe has no human to answer a question, so the tool **places itself** (user bin for a normal login; system bin if you already ran as root). Failure must be a real error, not a fake success. | `curl -fsSL https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli \| /bin/sh` |
-| Run it on a terminal with no arguments | You get the numbered sshd list (same as `sshd-cli menu`). It must **not** install-ensure and must **not** dump help. | `sshd-cli` (no arguments, real terminal) |
-| Quiet or JSON with **no arguments** | No yes/no question and no menu. The tool still **places** the program (or no-ops if already installed). A helper that returns success without placing is a defect. | Environment already `JSON=1` or `QUIET=1`, then `sshd-cli` with empty argv — **not** `sshd-cli --json` alone |
+| First install from the internet | No program is on disk yet. The pipe has no human to answer a question, so the tool **places itself** (user bin for a normal login; system bin if you already ran as root). Failure must be a real error, not a fake success. | `curl -fsSL https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli \| /bin/sh` |
+| Run it on a terminal with no arguments | You get the numbered keys menu (same as `key-cli menu`). It must **not** install-ensure and must **not** dump help. | `key-cli` (no arguments, real terminal) |
+| Quiet or JSON with **no arguments** | No yes/no question and no menu. The tool still **places** the program (or no-ops if already installed). A helper that returns success without placing is a defect. | Environment already `JSON=1` or `QUIET=1`, then `key-cli` with empty argv — **not** `key-cli --json` alone |
 
 Jargon: **Type O** (letter) means “no arguments = install-ensure” for **non-interactive** runs. That is **not** Type **0** (digit: you run as yourself). On a TTY, no arguments is the **menu**.
 
@@ -68,23 +68,23 @@ Jargon: **Type O** (letter) means “no arguments = install-ensure” for **non-
 
 ### 2.1 Definitions (portable + project)
 
-| Term | Definition for sshd-cli |
+| Term | Definition for key-cli |
 |------|----------------------------|
 | **Type O** | Online-install empty-argv product type: **non-interactive** empty argv = install-ensure (this product). |
-| **Type N** | Non-online-install empty-argv type: empty argv = help — **out of scope** for sshd-cli. |
+| **Type N** | Non-online-install empty-argv type: empty argv = help — **out of scope** for key-cli. |
 | **Empty argv / zero-arg** | `$# -eq 0` at entry to `app_main` (no command tokens; classic `curl \| sh` with no trailing args). |
-| **Interactive empty argv** | `TTY=1` and not quiet/json: route to `sshd_cmd_menu`. |
-| **Install-ensure** | Converge to “managed `sshd-cli` binary present”; either perform install or success no-op. **Non-interactive empty argv only.** |
+| **Interactive empty argv** | `TTY=1` and not quiet/json: route to `key_cmd_menu`. |
+| **Install-ensure** | Converge to “managed `key-cli` binary present”; either perform install or success no-op. **Non-interactive empty argv only.** |
 | **Not installed** | `inst_is_installed` returns false (`inst_get_version` → `not installed`). |
-| **Installed (local)** | Executable at `${USER_BIN}/sshd-cli` (default `USER_BIN=${HOME}/.local/bin`) observed by install-detect SSOT. |
-| **Installed (global)** | Executable at `${GLOBAL_BIN}/sshd-cli` (default `GLOBAL_BIN=/usr/local/bin`) observed by install-detect SSOT. |
+| **Installed (local)** | Executable at `${USER_BIN}/key-cli` (default `USER_BIN=${HOME}/.local/bin`) observed by install-detect SSOT. |
+| **Installed (global)** | Executable at `${GLOBAL_BIN}/key-cli` (default `GLOBAL_BIN=/usr/local/bin`) observed by install-detect SSOT. |
 | **Force / reinstall** | `FORCE_REINSTALL=1` from `--force` (and related force wiring in `app_main`). Required only for deliberate replace, not for ensure. |
 
 ### 2.2 Split meaning of empty argv
 
-1. When **argv is empty** and the run is **interactive** (`TTY=1`, `JSON=0`, `QUIET=0`), `app_main` **MUST** call `sshd_cmd_menu` — **MUST NOT** install-ensure and **MUST NOT** route to `app_help`.  
+1. When **argv is empty** and the run is **interactive** (`TTY=1`, `JSON=0`, `QUIET=0`), `app_main` **MUST** call `key_cmd_menu` — **MUST NOT** install-ensure and **MUST NOT** route to `app_help`.  
 2. When **argv is empty** and the run is **non-interactive** (no TTY, or `JSON=1`, or `QUIET=1`), `app_main` **MUST** run **install-ensure** — **MUST NOT** open the menu and **MUST NOT** route to `app_help`.  
-3. Explicit `sshd-cli help` remains the only full-usage path for help text. Explicit `sshd-cli menu` remains the named menu verb (same handler).  
+3. Explicit `key-cli help` remains the only full-usage path for help text. Explicit `key-cli menu` remains the named menu verb (same handler).  
 4. Bootstrap **MUST** always call `app_main "$@"` so pipe one-liners reach this contract (no `${0##*/}` product-name gate).  
 5. Non-interactive empty argv **MUST NOT** require the user to pass `install` or `install --force` merely because a previous ensure already succeeded.
 
@@ -103,7 +103,7 @@ When this product is used as **bootstrap origin A** for a specialized product **
 
 ### 2.3 Normative case matrix
 
-**Interactive empty argv** (before this matrix): `sshd_cmd_menu`; **does not** apply Cases A/B/C.
+**Interactive empty argv** (before this matrix): `key_cmd_menu`; **does not** apply Cases A/B/C.
 
 **Non-interactive** empty argv, `FORCE_REINSTALL=0`:
 
@@ -127,7 +127,7 @@ When **no managed binary** is present, **non-interactive** empty argv **MUST** p
 
 | Mode | What a person sees | What MUST happen |
 |------|--------------------|------------------|
-| **Interactive** (real terminal on stdin+stdout, not quiet/json) | Numbered domain menu | `sshd_cmd_menu`; empty choice / Exit → 0; **no** install-ensure |
+| **Interactive** (real terminal on stdin+stdout, not quiet/json) | Numbered domain menu | `key_cmd_menu`; empty choice / Exit → 0; **no** install-ensure |
 | **Non-interactive** (no terminal / `curl \| sh`) | An auto-install message | Place the program (`inst_maybe_install` non-TTY branch → `inst_perform_install`) |
 | **Quiet or JSON** | No question; no menu | `inst_perform_install` (no prompt). Failure **MUST** be non-zero. **MUST NOT** return success without placing. |
 | **Failure** (network, checksum, I/O) on install-ensure | An error | Non-zero exit; no fake success; no help-only output |
@@ -136,7 +136,7 @@ When **no managed binary** is present, **non-interactive** empty argv **MUST** p
 
 | Path | Quiet / JSON, not installed | Human TTY | Pipe, not installed |
 |------|-----------------------------|--------------------------|---------------------|
-| `app_main` empty argv | **MUST** call `inst_perform_install` directly | **MUST** call `sshd_cmd_menu` (not install) | **MUST** auto-install (helper non-TTY branch or direct place) |
+| `app_main` empty argv | **MUST** call `inst_perform_install` directly | **MUST** call `key_cmd_menu` (not install) | **MUST** auto-install (helper non-TTY branch or direct place) |
 | `inst_maybe_install` itself | **MUST** call `inst_perform_install` and return its status. **MUST NOT** `return 0` without placing | Unreachable from empty argv (menu owns TTY) | Auto-install message + place |
 
 Empty-argv quiet/json in `app_main` is **not** a license for the helper to no-op. Products copied from this bootstrap that route Case A **only** through the helper **MUST** still place the binary under quiet/json.
@@ -145,8 +145,8 @@ Empty-argv quiet/json in `app_main` is **not** a license for the helper to no-op
 
 | Invoker | Target |
 |---------|--------|
-| root (`id -u` 0), e.g. `curl … \| sudo sh` | `${GLOBAL_BIN}/sshd-cli` → `/usr/local/bin/sshd-cli` |
-| non-root | `${USER_BIN}/sshd-cli` → `${HOME}/.local/bin/sshd-cli` |
+| root (`id -u` 0), e.g. `curl … \| sudo sh` | `${GLOBAL_BIN}/key-cli` → `/usr/local/bin/key-cli` |
+| non-root | `${USER_BIN}/key-cli` → `${HOME}/.local/bin/key-cli` |
 
 ### 2.5 Equivalence to explicit `install`
 
@@ -170,13 +170,13 @@ Empty-argv quiet/json in `app_main` is **not** a license for the helper to no-op
 
 ### 2.7 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Empty-argv type** | Interactive → `sshd_cmd_menu`; non-interactive → **Type O** install-ensure (not Type N help-default) |
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Ship unit** | Repo root `./sshd-cli` |
+| **Empty-argv type** | Interactive → `key_cmd_menu`; non-interactive → **Type O** install-ensure (not Type N help-default) |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Ship unit** | Repo root `./key-cli` |
 | **Dispatcher** | `app_main` — empty-argv block **before** flag/command parse default help |
-| **Interactive empty argv** | `TTY=1` and not quiet/json → `sshd_cmd_menu` |
+| **Interactive empty argv** | `TTY=1` and not quiet/json → `key_cmd_menu` |
 | **Install ensure** | `inst_perform_install` (quiet/json and already-installed no-op) — **non-interactive** empty argv |
 | **Friendly first install** | `inst_maybe_install` (non-TTY auto) when not installed and not quiet/json. Quiet/JSON **MUST** call `inst_perform_install` (SM-BUG-01 fixed 2026-09-02). |
 | **Detect SSOT** | `inst_is_installed` ← `inst_get_version` |
@@ -194,7 +194,7 @@ Empty-argv quiet/json in `app_main` is **not** a license for the helper to no-op
 # after parse; this product uses $# -eq 0 at the top of app_main (before flag parse).
 if [ $# -eq 0 ]; then
     if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
-        sshd_cmd_menu
+        key_cmd_menu
         exit $?
     fi
     if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
@@ -262,7 +262,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 **Future AI assistants, Grok, or maintainers MUST NOT**:
 
 1. Route **non-interactive** empty argv to `app_help` or to the domain **menu** when Case A/B/C should install-ensure.  
-1b. Route **interactive** empty argv to install-ensure or to `app_help` instead of `sshd_cmd_menu`.  
+1b. Route **interactive** empty argv to install-ensure or to `app_help` instead of `key_cmd_menu`.  
 2. Require `--force` for a healthy already-installed **non-interactive** empty-argv re-run (local or global).  
 3. Handle only Case A and leave B/C as accidental help fallthrough.  
 4. Break dual-path detect so local or global installs are misclassified.  
@@ -284,7 +284,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 This requirement is satisfied when all of the following hold:
 
 1. Non-interactive empty argv + not installed → Case A install path (pipe / quiet / json auto). Quiet/json through the helper **MUST** place or fail closed — not `return 0` without install.  
-1b. Interactive empty argv → `sshd_cmd_menu`; **MUST NOT** place the binary as a side effect.  
+1b. Interactive empty argv → `key_cmd_menu`; **MUST NOT** place the binary as a side effect.  
 2. Non-interactive empty argv + local install present + force off → already-installed success; not help; not menu; no re-download.  
 3. Non-interactive empty argv + global install present + force off → already-installed success; not help; not menu; no re-download.  
 4. Empty argv + install failure → non-zero exit.  
@@ -317,7 +317,7 @@ This requirement is satisfied when all of the following hold:
 | `docs/requirements/requirement-shell-self-management.md` | self-update / uninstall (not empty-argv default) |
 | `docs/requirements/requirement-shell-output-requirements.md` | out_* / JSON purity |
 | `docs/requirements/requirement-shell-automatic-checksum.md` | Integrity on install download path |
-| Repo root `./sshd-cli` | Implementation (`app_main`, `inst_*`) |
+| Repo root `./key-cli` | Implementation (`app_main`, `inst_*`) |
 | `tests/test_cli.sh`, `tests/test_local_lifecycle.sh` | Regression coverage |
 
 ---
@@ -336,6 +336,6 @@ This requirement is satisfied when all of the following hold:
 ---
 
 **Last Updated**: 2026-09-06  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 6, 16, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).
 

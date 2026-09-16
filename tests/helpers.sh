@@ -1,5 +1,5 @@
 # =============================================================================
-# tests/helpers.sh — shared assertions for sshd-cli CI tests
+# tests/helpers.sh — shared assertions for key-cli CI tests
 # =============================================================================
 # Source from test scripts (POSIX /bin/sh). Does not modify product code.
 # =============================================================================
@@ -7,8 +7,8 @@
 # shellcheck disable=SC2034
 : "${TESTS_ROOT:=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}"
 : "${REPO_ROOT:=$(CDPATH= cd -- "${TESTS_ROOT}/.." && pwd)}"
-: "${SCRIPT:=${REPO_ROOT}/src/sshd-cli}"
-: "${APP_NAME:=sshd-cli}"
+: "${SCRIPT:=${REPO_ROOT}/src/key-cli}"
+: "${APP_NAME:=key-cli}"
 : "${PASS:=0}"
 : "${FAIL:=0}"
 : "${SKIP:=0}"
@@ -117,7 +117,7 @@ ci_isolated_env() {
     export USER_BIN="${CI_USER_BIN}"
     export GLOBAL_BIN="${CI_GLOBAL_BIN}"
     # Offline channel: file:// to the in-repo ship unit (no public network)
-    SCRIPT_URL="file://${REPO_ROOT}/sshd-cli"
+    SCRIPT_URL="file://${REPO_ROOT}/key-cli"
     export SCRIPT_URL
     unset CHECKSUM 2>/dev/null || true
     unset BASHRC 2>/dev/null || true
