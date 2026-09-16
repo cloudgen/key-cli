@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-09-16
+
+### Added
+
+- Login doorbell **`key-review-hook`**: Type 1 `setup` creates `/usr/local/bin/key-review-hook` → `key-cli` when missing (never overwrite, never reverse-symlink). key-adm `.bashrc` starts `sudo -n /usr/local/bin/key-review-hook auth-keys interactive`. Independent law `requirement-login-interactive-review-hook`. Tests **TP-HOOK-01** .. **TP-HOOK-09**.
+
 ## [2.1.1] - 2026-09-16
 
 ### Fixed

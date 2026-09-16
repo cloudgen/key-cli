@@ -22,6 +22,7 @@
 # - requirement-shell-interactive-vs-noninteractive.md
 # - requirement-shell-automatic-checksum.md
 # - requirement-domain-key.md
+# - requirement-login-interactive-review-hook.md
 # - requirement-shell-config-backup.md
 # - requirement-sudoer-json-file.md
 # - requirement-three-layer-privilege-model.md
@@ -56,8 +57,8 @@ APP_NAME="key-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, queue a public key for another account for key-adm to approve, and (as key-adm) do the same on behalf of other users.}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="2.1.1"
-: "${VERSION:=2.1.1}"
+VERSION="2.2.0"
+: "${VERSION:=2.2.0}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -114,6 +115,9 @@ fi
 : "${KEY_ADM_UID:=1666}"
 : "${KEY_ADM_GID:=1666}"
 : "${KEY_ADM_HOME:=/etc/key-adm}"
+: "${KEY_REVIEW_HOOK_NAME:=key-review-hook}"
+: "${KEY_CLI_TEST_HEAL_RC:=0}"
+: "${KEY_CLI_SETUP_HEAL:=0}"
 : "${KEY_NESTED_BACKUP:=0}"
 : "${ALLOW_TEST_LOCAL_SUDOERS:=0}"
 : "${SUBMIT_ACTION:=add}"
@@ -2041,22 +2045,22 @@ path_rc_test() {
                 shift
                 ;;
             *)
-                out_die "Unknown rc-test operand: $1. Next: ${APP_NAME} rc-test --root <dir> --file bashrc|profile --case create|modify|noop"
+                out_die "Unknown rc-test operand: $1. Next: ${APP_NAME} rc-test --root <dir> --file bashrc|profile|hook|symlink --case create|modify|noop|rewrite"
                 ;;
         esac
         shift
     done
 
     case "${file}" in
-        bashrc|zshrc|profile) ;;
+        bashrc|zshrc|profile|hook|symlink) ;;
         *)
-            out_die "Unknown rc-test --file ${file}. Next: use bashrc, zshrc, or profile."
+            out_die "Unknown rc-test --file ${file}. Next: use bashrc, zshrc, profile, hook, or symlink."
             ;;
     esac
     case "${cas}" in
-        create|modify|noop) ;;
+        create|modify|noop|rewrite) ;;
         *)
-            out_die "Unknown rc-test --case ${cas}. Next: use create, modify, or noop."
+            out_die "Unknown rc-test --case ${cas}. Next: use create, modify, noop, or rewrite."
             ;;
     esac
 
@@ -2066,6 +2070,85 @@ path_rc_test() {
     fi
     if [ ! -d "${root}" ]; then
         mkdir -p "${root}" || out_die "Could not create rc-test --root ${root}."
+    fi
+
+    if [ "${file}" = "hook" ] || [ "${file}" = "symlink" ]; then
+        if [ "${file}" = "symlink" ]; then
+            mkdir -p "${root}/bin" || out_die "Could not create ${root}/bin."
+            if [ "${cas}" = "create" ]; then
+                rm -f "${root}/bin/${APP_NAME}" "${root}/bin/key-review-hook"
+            fi
+            : > "${root}/bin/${APP_NAME}"
+            chmod 0755 "${root}/bin/${APP_NAME}" 2>/dev/null || true
+            if [ "${cas}" = "noop" ] && [ ! -e "${root}/bin/key-review-hook" ]; then
+                ln -s "${root}/bin/${APP_NAME}" "${root}/bin/key-review-hook"
+            fi
+            GLOBAL_BIN="${root}/bin"
+            export GLOBAL_BIN
+            key_ensure_login_hook_symlink
+            if [ ! -L "${root}/bin/key-review-hook" ]; then
+                out_die "rc-test ${cas} symlink did not create ${root}/bin/key-review-hook -> ${APP_NAME}."
+            fi
+            if [ -L "${root}/bin/${APP_NAME}" ]; then
+                out_die "rc-test ${cas} reverse-symlinked ${APP_NAME}."
+            fi
+            if [ "${JSON}" -eq 1 ]; then
+                out_json "out_success" "rc-test ${cas} symlink" "command" "rc-test" "file" "symlink" "case" "${cas}" "root" "${root}"
+                return 0
+            fi
+            out_plain "→ rc-test ${cas} symlink under ${root}"
+            return 0
+        fi
+        dest="${root}/.bashrc"
+        if [ "${cas}" = "create" ]; then
+            rm -f -- "${dest}"
+        fi
+        if [ "${cas}" = "rewrite" ]; then
+            {
+                printf '%s\n' "# BEGIN key-cli login hook"
+                printf '%s\n' 'if ! sudo -n /usr/local/bin/key-cli auth-keys interactive; then'
+                printf '%s\n' 'true'
+                printf '%s\n' 'fi'
+                printf '%s\n' "# END key-cli login hook"
+            } > "${dest}"
+        fi
+        if [ "${cas}" = "noop" ]; then
+            key_hook_block > "${dest}"
+        fi
+        before=$(cat "${dest}" 2>/dev/null || true)
+        KEY_CLI_SETUP_HEAL=1
+        export KEY_CLI_SETUP_HEAL
+        HOME="${root}"
+        export HOME
+        key_heal_login_rc
+        KEY_CLI_SETUP_HEAL=0
+        export KEY_CLI_SETUP_HEAL
+        after=$(cat "${dest}" 2>/dev/null || true)
+        case "${after}" in
+            *'/usr/local/bin/key-review-hook auth-keys interactive'*) ;;
+            *)
+                out_die "rc-test hook ${cas} missing key-review-hook doorbell."
+                ;;
+        esac
+        if [ "${cas}" = "rewrite" ]; then
+            case "${after}" in
+                *'/usr/local/bin/key-cli auth-keys interactive'*)
+                    out_die "rc-test hook rewrite left old key-cli doorbell."
+                    ;;
+            esac
+        fi
+        if [ "${cas}" = "noop" ] && [ "${before}" != "${after}" ]; then
+            out_die "rc-test hook noop changed ${dest}."
+        fi
+        if [ -f "${real_bashrc}" ] && [ "${dest}" != "${real_bashrc}" ]; then
+            :
+        fi
+        if [ "${JSON}" -eq 1 ]; then
+            out_json "out_success" "rc-test ${cas} hook" "command" "rc-test" "file" "hook" "case" "${cas}" "root" "${root}"
+            return 0
+        fi
+        out_plain "→ rc-test ${cas} hook under ${root}"
+        return 0
     fi
 
     case "${file}" in
@@ -3097,6 +3180,7 @@ key_lpu_sudoers_fragment_text() {
     : "${KEY_ADM_USER:=key-adm}"
     _user="${KEY_ADM_USER}"
     _global_path="${GLOBAL_BIN}/${APP_NAME}"
+    _hook_path="${GLOBAL_BIN}/key-review-hook"
     _installed=$(key_lpu_sudoers_path)
     cat <<EOF
 # Purpose: Allow ${_user} to backup/restore other users' .ssh, append authorized_keys, and review auth-key requests as root.
@@ -3122,8 +3206,10 @@ ${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys approve *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys reject *
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys interactive
 ${_user} ALL=(root) NOPASSWD: ${_global_path} --json auth-keys interactive *
+${_user} ALL=(root) NOPASSWD: ${_global_path%/*}/key-review-hook auth-keys interactive
+${_user} ALL=(root) NOPASSWD: ${_global_path%/*}/key-review-hook --json auth-keys interactive
 EOF
-    unset _user _global_path _installed
+    unset _user _global_path _hook_path _installed
 }
 
 key_sudoers_json_text_compact() {
@@ -4193,6 +4279,7 @@ key_cmd_auth_keys_interactive() {
     if [ "${_ak_any}" -eq 0 ]; then
         out_info "No pending auth-key requests in ${_ak_in}."
     fi
+    key_review_approver_login_rc
     unset _ak_el _ak_in _ak_any _ak_f _ak_b _ak_u _ak_s _ak_k
     return 0
 }
@@ -4612,6 +4699,194 @@ key_cmd_sudoers_menu() {
     unset _sc
 }
 
+# Login-hook doorbell: /usr/local/bin/key-review-hook -> key-cli
+# Law: requirement-login-interactive-review-hook.md
+key_review_hook_name() {
+    : "${KEY_REVIEW_HOOK_NAME:=key-review-hook}"
+    printf '%s' "${KEY_REVIEW_HOOK_NAME}"
+}
+
+key_hook_block() {
+    : "${APP_NAME:=key-cli}"
+    : "${KEY_ADM_USER:=key-adm}"
+    cat <<'EOF'
+# BEGIN key-cli login hook
+if [ -z "${KEY_CLI_LOGIN_HOOK_RAN:-}" ] \
+    && [ -n "${PS1:-}" ] \
+    && [ -t 0 ] && [ -t 1 ] \
+    && case "$-" in *i*) true ;; *) false ;; esac \
+    && [ "$(id -un)" = "key-adm" ] \
+    && [ -z "${SSH_ORIGINAL_COMMAND:-}" ]; then
+    KEY_CLI_LOGIN_HOOK_RAN=1
+    export KEY_CLI_LOGIN_HOOK_RAN
+    if ! sudo -n /usr/local/bin/key-review-hook auth-keys interactive; then
+        printf '%s\n' "key-cli: login review hook skipped (sudo -n failed)" >&2
+    fi
+fi
+# END key-cli login hook
+EOF
+}
+
+key_profile_source_block() {
+    : "${APP_NAME:=key-cli}"
+    cat <<'EOF'
+# BEGIN key-cli profile source-bashrc
+# Created so a bash login shell sources interactive rc (hook lives in .bashrc).
+if [ -n "${BASH_VERSION:-}" ]; then
+    if [ -f "${HOME}/.bashrc" ]; then
+        . "${HOME}/.bashrc"
+    fi
+fi
+# END key-cli profile source-bashrc
+EOF
+}
+
+util_align_rc_owner() {
+    local _file _user
+    _file="${1-}"
+    _user="${2-}"
+    if [ -z "${_file}" ] || [ ! -f "${_file}" ]; then
+        unset _file _user
+        return 0
+    fi
+    chmod 0644 "${_file}" 2>/dev/null || true
+    if [ -n "${_user}" ] && id "${_user}" >/dev/null 2>&1; then
+        if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ] || [ "$(id -un 2>/dev/null || echo "")" = "${_user}" ]; then
+            chown "${_user}" "${_file}" || out_die "Cannot chown ${_file} to ${_user}."
+        fi
+    fi
+    unset _file _user
+    return 0
+}
+
+key_ensure_login_hook_symlink() {
+    : "${APP_NAME:=key-cli}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${KEY_REVIEW_HOOK_NAME:=key-review-hook}"
+    : "${KEY_CLI_TEST_HEAL_RC:=0}"
+    local _bin _hook
+    if key_is_normal_user_only_cli; then
+        return 0
+    fi
+    if [ "${GLOBAL_BIN}" = "/usr/local/bin" ] && [ "${KEY_CLI_TEST_HEAL_RC}" = "1" ]; then
+        return 0
+    fi
+    _bin="${GLOBAL_BIN}/${APP_NAME}"
+    _hook="${GLOBAL_BIN}/${KEY_REVIEW_HOOK_NAME}"
+    if [ ! -e "${_bin}" ]; then
+        unset _bin _hook
+        return 0
+    fi
+    if [ -L "${_bin}" ]; then
+        unset _bin _hook
+        return 0
+    fi
+    if [ -e "${_hook}" ]; then
+        unset _bin _hook
+        return 0
+    fi
+    ln -s "${_bin}" "${_hook}" || true
+    unset _bin _hook
+    return 0
+}
+
+key_rewrite_old_hook_lines() {
+    local _file _tmp
+    _file="${1-}"
+    if [ -z "${_file}" ] || [ ! -f "${_file}" ]; then
+        unset _file
+        return 0
+    fi
+    if ! grep -q 'BEGIN key-cli login hook' "${_file}" 2>/dev/null; then
+        unset _file
+        return 0
+    fi
+    if grep -q '/usr/local/bin/key-review-hook auth-keys interactive' "${_file}" 2>/dev/null \
+        && ! grep -q '/usr/local/bin/key-cli auth-keys interactive' "${_file}" 2>/dev/null \
+        && ! grep -q '/usr/local/bin/key-cli-hook ' "${_file}" 2>/dev/null; then
+        unset _file
+        return 0
+    fi
+    _tmp=$(mktemp "${_file}.XXXXXX") || return 1
+    sed \
+        -e 's|/usr/local/bin/key-cli auth-keys interactive|/usr/local/bin/key-review-hook auth-keys interactive|g' \
+        -e 's|/usr/local/bin/key-cli-hook |/usr/local/bin/key-review-hook |g' \
+        "${_file}" > "${_tmp}" || { rm -f "${_tmp}"; return 1; }
+    mv "${_tmp}" "${_file}" || { rm -f "${_tmp}"; return 1; }
+    unset _file _tmp
+    return 0
+}
+
+key_heal_login_rc() {
+    : "${APP_NAME:=key-cli}"
+    : "${JSON:=0}"
+    : "${TTY:=0}"
+    : "${HOME:=/tmp}"
+    : "${KEY_ADM_USER:=key-adm}"
+    : "${KEY_CLI_TEST_HEAL_RC:=0}"
+    : "${KEY_CLI_SETUP_HEAL:=0}"
+    local _who _bashrc _profile _tmp _owner
+    if key_is_normal_user_only_cli; then
+        return 0
+    fi
+    if [ "${JSON}" -eq 1 ] && [ "${KEY_CLI_SETUP_HEAL}" != "1" ]; then
+        return 0
+    fi
+    if [ "${KEY_CLI_SETUP_HEAL}" != "1" ]; then
+        if [ "${TTY}" -ne 1 ] && [ "${KEY_CLI_TEST_HEAL_RC}" != "1" ]; then
+            return 0
+        fi
+        _who=$(id -un 2>/dev/null || echo "")
+        if [ "${_who}" != "${KEY_ADM_USER}" ]; then
+            unset _who
+            return 0
+        fi
+        case "${HOME}" in
+            ""|/tmp|/tmp/*|/dev/shm|/dev/shm/*)
+                unset _who
+                return 0
+                ;;
+        esac
+    fi
+    _bashrc="${HOME}/.bashrc"
+    _profile="${HOME}/.profile"
+    _owner="${KEY_ADM_USER}"
+    if [ ! -f "${_bashrc}" ]; then
+        : > "${_bashrc}" || return 0
+    fi
+    if ! grep -q 'BEGIN key-cli login hook' "${_bashrc}" 2>/dev/null; then
+        _tmp=$(mktemp "${_bashrc}.${APP_NAME}.XXXXXX") || return 1
+        cat "${_bashrc}" > "${_tmp}" || { rm -f "${_tmp}"; return 1; }
+        printf '\n' >> "${_tmp}"
+        key_hook_block >> "${_tmp}" || { rm -f "${_tmp}"; return 1; }
+        mv "${_tmp}" "${_bashrc}" || { rm -f "${_tmp}"; return 1; }
+    else
+        key_rewrite_old_hook_lines "${_bashrc}"
+    fi
+    util_align_rc_owner "${_bashrc}" "${_owner}"
+    if [ ! -f "${_profile}" ]; then
+        key_profile_source_block > "${_profile}" || return 1
+        util_align_rc_owner "${_profile}" "${_owner}"
+    fi
+    unset _who _bashrc _profile _tmp _owner
+    return 0
+}
+
+key_review_approver_login_rc() {
+    : "${KEY_ADM_HOME:=/etc/key-adm}"
+    : "${KEY_ADM_USER:=key-adm}"
+    local _bashrc
+    _bashrc="${KEY_ADM_HOME}/.bashrc"
+    if [ ! -f "${_bashrc}" ] || [ ! -w "${_bashrc}" ]; then
+        unset _bashrc
+        return 0
+    fi
+    key_rewrite_old_hook_lines "${_bashrc}"
+    util_align_rc_owner "${_bashrc}" "${KEY_ADM_USER}"
+    unset _bashrc
+    return 0
+}
+
 key_cmd_setup() {
     : "${APP_NAME:=key-cli}"
     : "${JSON:=0}"
@@ -4659,6 +4934,18 @@ key_cmd_setup() {
     chown root:root "${_root}/auth-key-request" "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
     chmod 1733 "${_root}/auth-key-request" 2>/dev/null || true
     chmod 0751 "${_root}/auth-key-accepted" "${_root}/auth-key-declined" 2>/dev/null || true
+    key_ensure_login_hook_symlink
+    _save_home="${HOME}"
+    KEY_CLI_SETUP_HEAL=1
+    export KEY_CLI_SETUP_HEAL
+    HOME="${KEY_ADM_HOME}"
+    export HOME
+    key_heal_login_rc
+    HOME="${_save_home}"
+    export HOME
+    KEY_CLI_SETUP_HEAL=0
+    export KEY_CLI_SETUP_HEAL
+    unset _save_home
     _f6=$(key_lpu_sudoers_path)
     _f6dir=$(dirname -- "${_f6}")
     mkdir -p "${_f6dir}" || out_die "Cannot create ${_f6dir}."
@@ -5195,7 +5482,7 @@ app_help() {
     out_plain "  menu                 Numbered tree: 1 keys, 2 on-behalf (key-adm), 8 self-management, 9 Exit. Submenus 0 Back. Alias: main"
     out_empty_line
     out_info "Tests (local folder; not install):"
-    out_plain "  rc-test              Prove PATH/profile ensure in --root tmp (--file bashrc|profile --case create|modify|noop). Does not write this login's real ~/.bashrc"
+    out_plain "  rc-test              Prove PATH/profile/hook/symlink in --root tmp (--file bashrc|profile|hook|symlink --case create|modify|noop|rewrite). Does not write this login's real ~/.bashrc"
     out_empty_line
     out_info "Global Options:"
     out_plain "  --quiet, -q          Suppress info/success (errors and warnings still shown)"
@@ -5243,6 +5530,7 @@ app_main() {
     EFFECTIVE_STORAGE_DIR=$(util_resolve_storage)
     export EFFECTIVE_STORAGE_DIR STORAGE_DIR
     export TMPDIR="${EFFECTIVE_STORAGE_DIR}"
+    key_heal_login_rc
 
     if [ $# -eq 0 ]; then
         if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then

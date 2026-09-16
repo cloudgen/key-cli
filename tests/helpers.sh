@@ -116,8 +116,8 @@ ci_isolated_env() {
     export HOME="${CI_HOME}"
     export USER_BIN="${CI_USER_BIN}"
     export GLOBAL_BIN="${CI_GLOBAL_BIN}"
-    # Offline channel: file:// to the in-repo ship unit (no public network)
-    SCRIPT_URL="file://${REPO_ROOT}/key-cli"
+    # Offline channel: file:// to the ship unit under test (src/key-cli)
+    SCRIPT_URL="file://${SCRIPT}"
     export SCRIPT_URL
     unset CHECKSUM 2>/dev/null || true
     unset BASHRC 2>/dev/null || true

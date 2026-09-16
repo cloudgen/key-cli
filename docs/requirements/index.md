@@ -27,6 +27,7 @@
 | requirement-sudoer-json-file | Points at `requirement-shell-sudoer` (JSON slice) | privilege | Active | `requirement-sudoer-json-file.md` | 2026-09-12 |
 | requirement-three-layer-privilege-model | Type 0/1/2 map; Type 2 is key-adm; sudoer verbs point at `requirement-shell-sudoer` | privilege | Active | `requirement-three-layer-privilege-model.md` | 2026-09-14 |
 | requirement-least-privilege-user | key-adm F1–F7, `setup` / `remove-lpu`; F6 includes auth-key approve/pending | privilege | Active | `requirement-least-privilege-user.md` | 2026-09-16 |
+| requirement-login-interactive-review-hook | key-adm login doorbell: `key-review-hook` symlink to `key-cli`; snippet starts `auth-keys interactive` | privilege | Active | `requirement-login-interactive-review-hook.md` | 2026-09-16 |
 | requirement-domain-key | SSH user-key domain (`backup` / `restore` / `auth-keys` including request/approve / `setup` / menu; on-behalf as key-adm; no OpenSSH client/server) | domain | Active | `requirement-domain-key.md` | 2026-09-16 |
 | requirement-domain-sshd | Superseded by `requirement-domain-key` | domain | Superseded | `requirement-domain-sshd.md` | 2026-09-14 |
 

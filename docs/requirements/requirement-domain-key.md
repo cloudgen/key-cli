@@ -189,7 +189,7 @@ Worked sample basename: `authkey-20260916-bob-alice-add-1.json`
   "kind": "auth-key",
   "action": "add",
   "submit_app": "key-cli",
-  "submit_version": "2.1.1",
+  "submit_version": "2.2.0",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyMaterialOnly alice@laptop"
 }
 ```
@@ -224,7 +224,7 @@ JSON `about` **MUST** add `key_cli_root`, `key_adm`, `key_adm_present`.
 
 | Item | Value |
 |------|--------|
-| Product | `key-cli` 2.1.1 |
+| Product | `key-cli` 2.2.0 |
 | Domain prefix | `key_*` |
 | Channel | `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli` |
 | LPU | `key-adm` UID/GID **1666**, home `/etc/key-adm`, F6 `/etc/key-adm/sudoers` |
@@ -283,6 +283,7 @@ When the ship unit detects Termux, Git Bash, Windows cmd, or the same class: Typ
 | `docs/requirements/requirement-shell-sudoer.md` | Grant + `util_sudo` |
 | `docs/requirements/requirement-least-privilege-user.md` | key-adm F1–F7 |
 | `docs/requirements/requirement-shell-cli-interface.md` | Dual mention of domain verbs |
+| `docs/requirements/requirement-login-interactive-review-hook.md` | Login doorbell `key-review-hook`; starts `auth-keys interactive` |
 | `./key-cli` | Implementation |
 
 ## 6. Design-time verification

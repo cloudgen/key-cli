@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/key-cli` / `./key-cli`  
-**Product VERSION:** 2.1.1  
+**Product VERSION:** 2.2.0  
 **Last plan update:** 2026-09-16  
-**Last suite run:** PASS=341 FAIL=0 SKIP=0 (2026-09-16)
+**Last suite run:** PASS=364 FAIL=0 SKIP=0 (2026-09-16)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
@@ -85,6 +85,20 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-KEY-21 | request `n` walks accepted (second file is add-2) | test_cli | requirement-domain-key | **have** |
 | TP-KEY-22 | approve of incorrect JSON fail-closed; inbound kept | test_cli | requirement-domain-key | **have** |
 | TP-KEY-23 | interactive skips incorrect JSON; no yes/no | test_cli | requirement-domain-key | **have** |
+
+### TP-HOOK (login doorbell)
+
+| TP-ID | Intent | Suite | Primary requirement(s) | Status |
+|-------|--------|-------|------------------------|--------|
+| TP-HOOK-01 | `rc-test --file hook --case create` plants snippet + `key-review-hook` | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-02 | missing `.profile` created and sources `.bashrc` | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-03 | existing `.profile` unchanged | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-04 | static: non-approver identity skip | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-05 | static: `--json` skip | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-06 | second heal noop | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-07 | `util_align_rc_owner` present | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-08 | symlink `key-review-hook` → `key-cli`; no reverse; rewrite old doorbell | test_cli | requirement-login-interactive-review-hook | **have** |
+| TP-HOOK-09 | `auth-keys interactive` rewrites old product-binary doorbell | test_cli | requirement-login-interactive-review-hook | **have** |
 
 ### TP-CFG (archive deposit / restore / sudoers / auth-keys)
 

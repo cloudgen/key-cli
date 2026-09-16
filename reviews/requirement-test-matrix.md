@@ -1,7 +1,7 @@
 # Requirement ↔ test matrix — key-cli
 
 **Updated:** 2026-09-16  
-**Product VERSION:** 2.1.1  
+**Product VERSION:** 2.2.0  
 **Suite:** `tests/run.sh`
 
 | Requirement key | Area | TP families | Coverage notes |
@@ -18,6 +18,7 @@
 | requirement-shell-interactive-vs-noninteractive | shell | TP-LC-05 · TP-CLI-07 · TP-CLI-14 · TP-KEY-08 · TP-KEY-16 · TP-CFG-17 · TP-CFG-22 | self-uninstall confirm; empty-argv TTY vs pipe; TTY unknown menu / sudoers / restore picker redisplay; `menu --json` fail closed |
 | requirement-shell-cli-storage | shell | TP-CLI-12, TP-CLI-06, TP-CLI-19, TP-CLI-20 | Isolation; about JSON storage fields; Git Bash `/dev/shm` mkdir fail-soft |
 | requirement-shell-automatic-checksum | shell | TP-CSUM-01, TP-CLI-04, TP-CLI-06 | Companion **link** on install; CHECKSUM omitted from help/about. Not TP-LC-01. |
+| requirement-login-interactive-review-hook | privilege | **TP-HOOK-01..09** | `key-review-hook` → `key-cli`; key-adm `.bashrc` starts `auth-keys interactive` |
 | requirement-domain-key | domain | TP-CLI-04, TP-CLI-14, TP-CLI-21, **TP-KEY-01..09**, **TP-KEY-16**, **TP-KEY-10..15**, **TP-KEY-17**, **TP-KEY-18**, **TP-KEY-20..23**, **TP-CFG-01..27** | help rows; menu 1/2/8/9 + **15** request; file-based JSON approval for key-adm; Termux hide backup; archive deposit |
 | requirement-domain-sshd | domain | — | **Superseded.** Suites that proved sshd/client (`TP-SSHD` / `TP-DNS` / `TP-SSH` / `TP-DL` / `TP-UL`) are **n/a** |
 | requirement-shell-sudoer | shell | TP-CFG-06, TP-CFG-07, TP-CFG-17, TP-CFG-24 | JSON grant, print-sudoers, nuser hide, TTY sudoers unknown retry; wrap `util_sudo` |

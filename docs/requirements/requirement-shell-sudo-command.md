@@ -46,6 +46,7 @@ This requirement **points** at `requirement-shell-sudoer` for in-tool sudo: one 
 | `{{GLOBAL_BIN}}/key-cli` | `backup` | none and `*` | `/etc/sudoers.d/key-cli-{{username}}` | yes | yes | this product `print-sudoers` emit |
 | `{{GLOBAL_BIN}}/key-cli` | `restore` | `*` | `/etc/sudoers.d/key-cli-{{username}}` | yes | yes | this product `print-sudoers` emit |
 | `{{GLOBAL_BIN}}/key-cli` | `auth-keys` | `add *` / `pending` / `pending *` / `approve *` / `reject *` / `interactive` / `interactive *` | `/etc/key-adm/sudoers` (F6) | yes | yes | this product `key_lpu_sudoers_fragment_text` |
+| `{{GLOBAL_BIN}}/key-review-hook` | `auth-keys` | `interactive` | `/etc/key-adm/sudoers` (F6) | yes | yes | login doorbell; symlink to `key-cli` |
 
 ### 2.2 Implementation Notes (this project)
 

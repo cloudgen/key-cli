@@ -353,6 +353,7 @@ run_test_config_backup() {
     assert_contains "TP-CFG-26 F6 --json restore *" "${_fn}" '--json restore *'
     assert_contains "TP-CFG-26 F6 --json auth-keys add *" "${_fn}" '--json auth-keys add *'
     assert_contains "TP-CFG-26 F6 --json auth-keys approve *" "${_fn}" '--json auth-keys approve *'
+    assert_contains "TP-CFG-26 F6 key-review-hook interactive" "${_fn}" 'key-review-hook auth-keys interactive'
     assert_not_contains "TP-CFG-26 F6 no ALL ALL" "${_fn}" 'ALL=(ALL) ALL'
     assert_not_contains "TP-CFG-26 F6 no /bin/tar" "${_fn}" '/bin/tar'
     unset _fn

@@ -13,7 +13,7 @@ It owns **path-ensure** (one shared `USER_BIN` line on interactive rc) and **pro
 **Scope:** Which rc files this product writes; the exact PATH line; create / append / no-op; profile create-if-absent; write-path env; sibling comments; uninstall of **this** product’s stickers; fixture tests; `rc-test`.  
 **Out of scope (cited, not re-owned):** Placing or removing the binary (`requirement-shell-self-management`); Termux `pkg` (`requirement-shell-termux-ish`); sshd start/stop (`requirement-domain-sshd`); scratch/cache (`requirement-shell-cli-storage`).
 
-**Not claimed:** login-review hook; Type 1 `setup` `chown` of another login’s rc; `/etc/environment`; crontab.
+**Not claimed:** `/etc/environment`; crontab. Login-review snippet SSOT is `requirement-login-interactive-review-hook` (this file dual-mentions `rc-test --root` for hook/symlink fixtures).
 
 ### 1.1 Human-facing
 
@@ -52,14 +52,14 @@ It owns **path-ensure** (one shared `USER_BIN` line on interactive rc) and **pro
 |---------|--------------|-------|
 | **path-ensure** | **Claimed** | `.bashrc` (`BASHRC`): create if missing. `.zshrc` (`ZSHRC`): only if the file exists (do **not** invent it). Fish `config.fish` (`FISH_CONFIG`): create the config dir if needed. **Not** `.profile` |
 | **profile-ensure** | **Claimed** | `.profile` (`PROFILE`): create if absent with a sample that sources `.bashrc`; **never overwrite** an existing body |
-| **login-hook** | **Unused** | Do **not** plant a review scrap in `.bashrc` or `.profile` |
-| **rc-owner** | **This-login writer** | After create/modify, mode readable (`0644`). No Type 1 `setup` `chown` of another login’s home. Writer **is** this login |
+| **login-hook** | **Claimed** (owner: `requirement-login-interactive-review-hook`) | key-adm only; Type 0 `rc-test --root --file hook\|symlink` |
+| **rc-owner** | **This-login writer** for PATH ensure; key-adm home on Type 1 setup (hook REQ) | PATH ensure does not `chown` another login |
 
 | File | path-ensure | profile-ensure | login-hook | rc-owner |
 |------|-------------|----------------|------------|----------|
-| `.bashrc` | Yes (create) | — | **Unused** | This login |
+| `.bashrc` | Yes (create) | — | key-adm only (hook REQ) | This login (PATH); key-adm (hook) |
 | `.zshrc` | Yes if exists | — | Unused | This login |
-| `.profile` | **No** PATH line | **Yes** | Unused | This login |
+| `.profile` | **No** PATH line | **Yes** | Unused (create-if-absent source-bashrc) | This login |
 | Fish `config.fish` | Yes (create dir) | — | Unused | This login |
 
 **MUST NOT** treat `~/.ssh-*` vault dirs as this family. **MUST NOT** write another user’s rc.

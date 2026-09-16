@@ -76,6 +76,8 @@ Type 0 user grants for *self* backup stay on `requirement-shell-sudoer`. This fi
 {{GLOBAL_BIN}}/key-cli --json auth-keys reject *
 {{GLOBAL_BIN}}/key-cli --json auth-keys interactive
 {{GLOBAL_BIN}}/key-cli --json auth-keys interactive *
+{{GLOBAL_BIN}}/key-review-hook auth-keys interactive
+{{GLOBAL_BIN}}/key-review-hook --json auth-keys interactive
 ```
 
 **MUST NOT** allowlist `tar`, `cp`, `mkdir`, `chmod`, `chown`, shells, or `ALL`.

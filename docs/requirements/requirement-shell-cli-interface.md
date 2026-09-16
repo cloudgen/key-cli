@@ -165,7 +165,7 @@ When specializing product **B** from this bootstrap (**A → B only**):
 | `generate-sudoer-request` | Type 0 | `key_cmd_generate_sudoer_request` | Local JSON grant. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli generate-sudoer-request` |
 | `submit-sudoer-request` | Type 0 | `key_cmd_submit_sudoer_request` | Queue inbound. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli submit-sudoer-request` |
 | `remove-project-sudoers` | Type 0 | `key_cmd_remove_project_sudoers` | Delete draft. Dual mention: `requirement-shell-sudoer`. Sample: `key-cli remove-project-sudoers` |
-| `rc-test` | Type 0 **test-purpose** | `path_rc_test` | Fixture create / modify / no-op against `--root` tmp/cache. **MUST NOT** write this login’s real `{{HOME}}/.bashrc`. Help lists this **apart** from operational verbs. Dual mention: `requirement-shell-path-and-shell-support`. Sample: `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| `rc-test` | Type 0 **test-purpose** | `path_rc_test` | Fixture create / modify / no-op against `--root` tmp/cache (`bashrc` / `profile` / **`hook`** / **`symlink`**). **MUST NOT** write this login’s real `{{HOME}}/.bashrc` or live `/usr/local/bin`. Help lists this **apart** from operational verbs. Dual mention: `requirement-shell-path-and-shell-support` · `requirement-login-interactive-review-hook`. Sample: `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
 
 #### Dual mention (CI-M1 — this project)
 
@@ -184,7 +184,8 @@ Every routed verb is named **here** and on a topic-owner. Help/`app_help` is **n
 | `setup` / `remove-lpu` | `requirement-least-privilege-user` | `key-cli setup` |
 | `print-sudoers` / `print-sudoers-install-script` / `generate-sudoer-request` / `submit-sudoer-request` / `remove-project-sudoers` | `requirement-shell-sudoer` | `key-cli generate-sudoer-request` |
 | `main` | `requirement-domain-key` | alias of `menu` (help names the alias; type `menu`) |
-| `rc-test` | `requirement-shell-path-and-shell-support` | `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| `rc-test` | `requirement-shell-path-and-shell-support` · `requirement-login-interactive-review-hook` | `key-cli rc-test --root "$tmpdir" --file bashrc --case create` · `key-cli rc-test --root "$tmpdir" --file hook --case create` |
+| `auth-keys interactive` | `requirement-domain-key` · `requirement-login-interactive-review-hook` | `key-cli auth-keys interactive` (login doorbell starts this verb) |
 
 #### Global flags (normative wiring for this project)
 

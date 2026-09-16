@@ -109,7 +109,7 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | **Architectures supported** | any arch with a POSIX sh and the external tools the script invokes (no arch-specific binary) |
 | **Git surface** | used for product publish (`github.com/cloudgen/key-cli`) |
 | **Ship unit / install** | yes — repo root `./key-cli` + companion `key-cli.sha256`; Type 0 online install (peer shell REQs) |
-| **Product version SSOT** | `VERSION="…"` hard-assign in `./key-cli` (currently `2.1.1`) |
+| **Product version SSOT** | `VERSION="…"` hard-assign in `./key-cli` (currently `2.2.0`) |
 
 **Residual ownership table:**
 
@@ -135,8 +135,8 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | Coding-style related REQ | `requirement-shell-script-coding` | Specialize-in home; class residual **points** |
 | Actor / role / subject / approver | `requirement-domain-key` (product-local auth-key queue) · *none* dest | **No dest approver.** key-adm approves product-local JSON; class residual does not invent dest |
 | Dest fence conditions | *none* (considered — **no dest fence conditions**) | No dest inbound queue; product-local queue is not dest |
-| Login-review hook | *none* (considered — **no login-hook**) | Type 0 key helper; no dest review scrap |
-| Type 1 rc-owner heal | *none* (considered — **this-login writer**) | No elevated `setup` `chown` of another home |
+| Login-review hook | `requirement-login-interactive-review-hook` | **key-review-hook** → `key-cli`; key-adm `.bashrc` |
+| Type 1 rc-owner heal | `requirement-login-interactive-review-hook` | setup plants key-adm rc; Type 0 PATH ensure stays this-login writer |
 
 ---
 

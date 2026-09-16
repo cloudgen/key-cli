@@ -452,4 +452,102 @@ run_test_cli() {
     assert_contains "TP-KEY-23 incorrect JSON format named" "$_out" "Incorrect JSON format"
     assert_not_contains "TP-KEY-23 no approval question" "$_out" "Approve this request"
     ci_cleanup_env
+
+    # TP-HOOK-01 plant snippet via rc-test --file hook
+    ci_isolated_env
+    _rcroot=$(mktemp -d "${TMPDIR:-/tmp}/rc-hook.XXXXXX")
+    _out=$(HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case create 2>&1)
+    _ec=$?
+    assert_eq "TP-HOOK-01 hook create exit 0" 0 "$_ec"
+    assert_file_exists "TP-HOOK-01 bashrc" "${_rcroot}/.bashrc"
+    assert_contains "TP-HOOK-01 begin marker" "$(cat "${_rcroot}/.bashrc")" "BEGIN key-cli login hook"
+    assert_contains "TP-HOOK-01 doorbell" "$(cat "${_rcroot}/.bashrc")" "/usr/local/bin/key-review-hook auth-keys interactive"
+    assert_not_contains "TP-HOOK-01 not product-binary doorbell" "$(cat "${_rcroot}/.bashrc")" "/usr/local/bin/key-cli auth-keys interactive"
+    ci_cleanup_env
+
+    # TP-HOOK-02 missing .profile created
+    ci_isolated_env
+    _rcroot=$(mktemp -d "${TMPDIR:-/tmp}/rc-hook.XXXXXX")
+    HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case create >/dev/null 2>&1
+    assert_file_exists "TP-HOOK-02 profile created" "${_rcroot}/.profile"
+    assert_contains "TP-HOOK-02 profile sources bashrc" "$(cat "${_rcroot}/.profile")" '. "${HOME}/.bashrc"'
+    ci_cleanup_env
+
+    # TP-HOOK-03 existing .profile unchanged
+    ci_isolated_env
+    _rcroot=$(mktemp -d "${TMPDIR:-/tmp}/rc-hook.XXXXXX")
+    printf 'KEEP-PROFILE-BODY\n' > "${_rcroot}/.profile"
+    HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case create >/dev/null 2>&1
+    assert_contains "TP-HOOK-03 profile body kept" "$(cat "${_rcroot}/.profile")" "KEEP-PROFILE-BODY"
+    ci_cleanup_env
+
+    # TP-HOOK-04 static: non-approver identity skip
+    _src=$(sed -n '/^key_heal_login_rc()/,/^key_review_approver_login_rc()/p' "${SCRIPT}")
+    assert_contains "TP-HOOK-04 identity skip" "${_src}" 'if [ "${_who}" != "${KEY_ADM_USER}" ]; then'
+    unset _src
+
+    # TP-HOOK-05 static: JSON skip unless setup heal
+    _src=$(sed -n '/^key_heal_login_rc()/,/^key_review_approver_login_rc()/p' "${SCRIPT}")
+    assert_contains "TP-HOOK-05 json skip" "${_src}" 'if [ "${JSON}" -eq 1 ]'
+    unset _src
+
+    # TP-HOOK-06 second heal noop
+    ci_isolated_env
+    _rcroot=$(mktemp -d "${TMPDIR:-/tmp}/rc-hook.XXXXXX")
+    HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case create >/dev/null 2>&1
+    HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case noop >/dev/null 2>&1
+    _ec=$?
+    assert_eq "TP-HOOK-06 hook noop exit 0" 0 "$_ec"
+    ci_cleanup_env
+
+    # TP-HOOK-07 chown helper present
+    _src=$(cat "${SCRIPT}")
+    assert_contains "TP-HOOK-07 util_align_rc_owner" "${_src}" 'util_align_rc_owner()'
+    unset _src
+
+    # TP-HOOK-08 symlink key-review-hook -> key-cli; no reverse; rewrite old doorbell
+    ci_isolated_env
+    _rcroot=$(mktemp -d "${TMPDIR:-/tmp}/rc-hook.XXXXXX")
+    _out=$(HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file symlink --case create 2>&1)
+    _ec=$?
+    assert_eq "TP-HOOK-08 symlink create exit 0" 0 "$_ec"
+    assert_file_exists "TP-HOOK-08 hook name exists" "${_rcroot}/bin/key-review-hook"
+    if [ -L "${_rcroot}/bin/key-review-hook" ]; then
+        t_pass "TP-HOOK-08 hook is a symlink"
+    else
+        t_fail "TP-HOOK-08 hook is a symlink"
+    fi
+    _tgt=$(readlink "${_rcroot}/bin/key-review-hook")
+    case "${_tgt}" in
+        *key-cli) t_pass "TP-HOOK-08 target is key-cli" ;;
+        *) t_fail "TP-HOOK-08 target is key-cli (got ${_tgt})" ;;
+    esac
+    if [ -L "${_rcroot}/bin/key-cli" ]; then
+        t_fail "TP-HOOK-08 no reverse-symlink of key-cli"
+    else
+        t_pass "TP-HOOK-08 no reverse-symlink of key-cli"
+    fi
+    HOME="${CI_HOME}" sh "${SCRIPT}" rc-test --root "${_rcroot}" --file hook --case rewrite >/dev/null 2>&1
+    assert_contains "TP-HOOK-08 rewrite to key-review-hook" "$(cat "${_rcroot}/.bashrc")" "/usr/local/bin/key-review-hook auth-keys interactive"
+    assert_not_contains "TP-HOOK-08 old key-cli doorbell gone" "$(cat "${_rcroot}/.bashrc")" "/usr/local/bin/key-cli auth-keys interactive"
+    ci_cleanup_env
+
+    # TP-HOOK-09 interactive rewrites old product-binary doorbell in KEY_ADM_HOME
+    ci_isolated_env
+    _user=$(id -un 2>/dev/null || echo unknown)
+    _store="${CI_HOME}/store"
+    _adm="${CI_HOME}/adm"
+    mkdir -p "${_store}/auth-key-request" "${_store}/auth-key-accepted" "${_store}/auth-key-declined" "${_adm}"
+    chmod 1777 "${_store}/auth-key-request"
+    {
+        printf '%s\n' "# BEGIN key-cli login hook"
+        printf '%s\n' 'sudo -n /usr/local/bin/key-cli auth-keys interactive'
+        printf '%s\n' "# END key-cli login hook"
+    } > "${_adm}/.bashrc"
+    _out=$(printf '%s\n' | HOME="${CI_HOME}" KEY_CLI_ROOT="${_store}" KEY_ADM_HOME="${_adm}" KEY_ADM_USER="${_user}" TTY=1 sh "${SCRIPT}" auth-keys interactive 2>&1)
+    _ec=$?
+    assert_eq "TP-HOOK-09 interactive exit 0" 0 "$_ec"
+    assert_contains "TP-HOOK-09 rewritten doorbell" "$(cat "${_adm}/.bashrc")" "/usr/local/bin/key-review-hook auth-keys interactive"
+    assert_not_contains "TP-HOOK-09 old doorbell gone" "$(cat "${_adm}/.bashrc")" "/usr/local/bin/key-cli auth-keys interactive"
+    ci_cleanup_env
 }
