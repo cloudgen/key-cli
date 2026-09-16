@@ -57,8 +57,8 @@ APP_NAME="key-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, queue a public key for another account for key-adm to approve, and (as key-adm) do the same on behalf of other users.}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="2.2.0"
-: "${VERSION:=2.2.0}"
+VERSION="2.2.1"
+: "${VERSION:=2.2.1}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -136,6 +136,7 @@ else
     IS_ROOT=0
 fi
 : "${IS_ROOT:=0}"
+: "${FORCE_GLOBAL:=0}"
 : "${SH:=sh}"
 # =============================================================================
 # out_text() - SINGLE SOURCE OF TRUTH FOR ALL OUTPUT
@@ -586,11 +587,15 @@ fi
     : "${SCRIPT_URL:=}"
     : "${REMOTE_VERSION:=}"
 
+    : "${FORCE_GLOBAL:=0}"
     if [ "$(id -u)" -eq 0 ]; then
         IS_ROOT=1
-        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
     else
         IS_ROOT=0
+    fi
+    if [ "${FORCE_GLOBAL}" -eq 1 ] || [ "${IS_ROOT}" -eq 1 ]; then
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+    else
         INSTALL_PATH="${USER_BIN}/${APP_NAME}"
     fi
 
@@ -607,6 +612,7 @@ fi
     inst_ensure_companion
 
     if inst_is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        inst_force_dest_mode_0755 "${INSTALL_PATH}"
         if [ "${JSON}" -eq 1 ]; then
             out_json "out_success" "${APP_NAME} is already installed."
         else
@@ -952,11 +958,39 @@ inst_perform_install_download_without_checksum() {
 # Last reviewed: 29 April 2026
 # =============================================================================
 
+inst_force_dest_mode_0755() {
+    : "${JSON:=0}"
+    local _dest="${1-}"
+    if [ -z "${_dest}" ] || [ ! -f "${_dest}" ]; then
+        return 0
+    fi
+    if chmod 0755 "${_dest}" 2>/dev/null; then
+        return 0
+    fi
+    if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Cannot set dest mode 0755 on ${_dest}" "io_error"
+        else
+            out_error "Cannot set dest mode 0755 on ${_dest}"
+        fi
+        return 1
+    fi
+    return 0
+}
+
 inst_perform_install_atomic_install() {
     local tmp_file="$1"
     local downloaded_checksum_ok="$2"
 
-    chmod 0755 "${tmp_file}" 2>/dev/null || chmod +x "${tmp_file}" 2>/dev/null || true
+    if ! chmod 0755 "${tmp_file}"; then
+        rm -f "${tmp_file}"
+        if [ "${JSON}" -eq 1 ]; then
+            out_json_error "Cannot set dest mode 0755 on staging file" "io_error"
+        else
+            out_error "Cannot set dest mode 0755 on staging file"
+        fi
+        return 1
+    fi
 
     rm -f "${INSTALL_PATH}" 2>/dev/null
     if ! mv "${tmp_file}" "${INSTALL_PATH}" 2>/dev/null; then
@@ -968,7 +1002,7 @@ inst_perform_install_atomic_install() {
         fi
         return 1
     fi
-    chmod 0755 "${INSTALL_PATH}" 2>/dev/null || true
+    inst_force_dest_mode_0755 "${INSTALL_PATH}" || return 1
 
     # PATH / rc files are ensured in inst_ensure_companion (before binary place
     # and on already-installed re-runs). Do not duplicate here.
@@ -1177,6 +1211,12 @@ inst_self_update() {
     local_version=$(inst_get_version)
 
     if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        : "${FORCE_GLOBAL:=0}"
+        if [ "${FORCE_GLOBAL}" -eq 1 ] || [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+            inst_force_dest_mode_0755 "${GLOBAL_BIN}/${APP_NAME}"
+        else
+            inst_force_dest_mode_0755 "${USER_BIN}/${APP_NAME}"
+        fi
         if [ "${JSON}" -eq 1 ]; then
             out_json "out_success" "Already running the latest version (${REMOTE_VERSION})."
         else

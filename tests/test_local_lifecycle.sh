@@ -137,6 +137,44 @@ run_test_local_lifecycle() {
         *) assert_eq "TP-LC-10 healed mode 0755" "0755" "${_mode}" ;;
     esac
 
+    # TP-LC-10 already-installed (no --force) heals leftover 0711
+    chmod 0711 "${CI_USER_BIN}/${APP_NAME}" 2>/dev/null || chmod 711 "${CI_USER_BIN}/${APP_NAME}"
+    HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" sh "${SCRIPT}" install >/dev/null 2>&1
+    _mode=$(stat -c '%a' "${CI_USER_BIN}/${APP_NAME}" 2>/dev/null || stat -f '%OLp' "${CI_USER_BIN}/${APP_NAME}" 2>/dev/null || echo "")
+    case "${_mode}" in
+        755|0755) assert_eq "TP-LC-10 no-force heal 0755" "0755" "0755" ;;
+        *) assert_eq "TP-LC-10 no-force heal 0755" "0755" "${_mode}" ;;
+    esac
+
+    # TP-LC-10 isolated GLOBAL_BIN (FORCE_GLOBAL) dest is 0755, not 0711
+    chmod 0711 "${CI_USER_BIN}/${APP_NAME}" 2>/dev/null || true
+    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" FORCE_GLOBAL=1 sh "${SCRIPT}" install --force 2>&1)
+    _ec=$?
+    assert_eq "TP-LC-10 global install exit 0" 0 "$_ec"
+    assert_file_exists "TP-LC-10 global dest exists" "${CI_GLOBAL_BIN}/${APP_NAME}"
+    _mode=$(stat -c '%a' "${CI_GLOBAL_BIN}/${APP_NAME}" 2>/dev/null || stat -f '%OLp' "${CI_GLOBAL_BIN}/${APP_NAME}" 2>/dev/null || echo "")
+    case "${_mode}" in
+        755|0755) assert_eq "TP-LC-10 global dest mode 0755" "0755" "0755" ;;
+        *) assert_eq "TP-LC-10 global dest mode 0755" "0755" "${_mode}" ;;
+    esac
+
+    # TP-LC-25 global self-update heals leftover 0711
+    chmod 0711 "${CI_GLOBAL_BIN}/${APP_NAME}" 2>/dev/null || chmod 711 "${CI_GLOBAL_BIN}/${APP_NAME}"
+    _out=$(HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" GLOBAL_BIN="${CI_GLOBAL_BIN}" FORCE_GLOBAL=1 sh "${SCRIPT}" self-update --force 2>&1)
+    _ec=$?
+    assert_eq "TP-LC-25 global self-update exit 0" 0 "$_ec"
+    _mode=$(stat -c '%a' "${CI_GLOBAL_BIN}/${APP_NAME}" 2>/dev/null || stat -f '%OLp' "${CI_GLOBAL_BIN}/${APP_NAME}" 2>/dev/null || echo "")
+    case "${_mode}" in
+        755|0755) assert_eq "TP-LC-25 global self-update dest 0755" "0755" "0755" ;;
+        *) assert_eq "TP-LC-25 global self-update dest 0755" "0755" "${_mode}" ;;
+    esac
+
+    # static: atomic place has no chmod +x fallback
+    _fn=$(sed -n '/^inst_perform_install_atomic_install()/,/^inst_ensure_companion()/p' "${SCRIPT}")
+    assert_contains "TP-LC-10 atomic chmod 0755" "${_fn}" 'chmod 0755'
+    assert_not_contains "TP-LC-10 atomic no chmod +x" "${_fn}" 'chmod +x'
+    unset _fn
+
     # cleanup remaining binary
     HOME="${CI_HOME}" USER_BIN="${CI_USER_BIN}" sh "${CI_USER_BIN}/${APP_NAME}" self-uninstall --force >/dev/null 2>&1 || true
     ci_cleanup_env

@@ -1,7 +1,7 @@
 # Requirement ↔ test matrix — key-cli
 
 **Updated:** 2026-09-16  
-**Product VERSION:** 2.2.0  
+**Product VERSION:** 2.2.1  
 **Suite:** `tests/run.sh`
 
 | Requirement key | Area | TP families | Coverage notes |
@@ -10,7 +10,7 @@
 | requirement-shell-cli-interface | shell | TP-CLI-* · TP-KEY-01/02 | Commands, flags, dispatch; domain verbs in help; Git Bash / Windows cmd; TTY **82** about (**TP-CLI-21**) |
 | requirement-shell-cli-default-interaction | shell | TP-CLI-14 · **TP-CLI-21** · TP-KEY-04..07 · TP-KEY-16 · TP-KEY-20 · TP-CFG-17 · TP-CFG-22 | Numbered tree 1/2/8/9; keys **15**; on-behalf **24**/**25**; TTY **82** / typed `version` run about; unknown choice redisplay |
 | requirement-shell-cli-zero-arguments | shell | TP-CLI-07, TP-CLI-14 | Non-TTY install-ensure; TTY menu |
-| requirement-shell-self-management | shell | TP-LC-* (incl. **09/10** mode) · TP-CLI-10 | install / self-uninstall; **0755**; companion **call site**; channel verbs routed. Rc bodies: `requirement-shell-path-and-shell-support` |
+| requirement-shell-self-management | shell | TP-LC-* (incl. **09/10** mode · **TP-LC-25**) · TP-CLI-10 | install / self-uninstall; dest **0755** (isolated `GLOBAL_BIN`); global self-update; companion **call site**; channel verbs routed. Rc bodies: `requirement-shell-path-and-shell-support` |
 | requirement-shell-path-and-shell-support | shell | TP-LC-11–14 · TP-LC-20–22 · TP-LC-27–31 · TP-CLI-18 | PATH / profile; sibling; scoped uninstall; heal; `rc-test` routed |
 | requirement-shell-output-requirements | shell | TP-CLI-03,05,08,09 · TP-CFG-18 | JSON / quiet / errors; nested backup is not a second JSON object |
 | requirement-shell-modular-function-design | shell | (indirect) | `key_*` domain prefix; `app_main` / `out_*`; `inst_ensure_companion` — no dedicated prefix scan |

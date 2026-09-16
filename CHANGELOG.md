@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-09-16
+
+### Fixed
+
+- Global / user-bin shebang dest is **0755** (not `chmod +x` → **0711**). Already-installed `install` and already-latest `self-update` heal leftover 0711. Isolated `FORCE_GLOBAL` **TP-LC-10**; global **TP-LC-25**.
+
 ## [2.2.0] - 2026-09-16
 
 ### Added

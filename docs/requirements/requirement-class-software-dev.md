@@ -109,7 +109,7 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | **Architectures supported** | any arch with a POSIX sh and the external tools the script invokes (no arch-specific binary) |
 | **Git surface** | used for product publish (`github.com/cloudgen/key-cli`) |
 | **Ship unit / install** | yes — repo root `./key-cli` + companion `key-cli.sha256`; Type 0 online install (peer shell REQs) |
-| **Product version SSOT** | `VERSION="…"` hard-assign in `./key-cli` (currently `2.2.0`) |
+| **Product version SSOT** | `VERSION="…"` hard-assign in `./key-cli` (currently `2.2.1`) |
 
 **Residual ownership table:**
 

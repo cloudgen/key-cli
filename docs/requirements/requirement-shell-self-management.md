@@ -1,5 +1,5 @@
 **file**: docs/requirements/requirement-shell-self-management.md  
-**Status**: Active (Version 1.1.2)  
+**Status**: Active (Version 1.1.3)  
 **Philosophy**: CIAO / CIAO-Lite (Caution • Intentional • Anti-fragile • Over-engineered)
 
 ## 1. Purpose
@@ -65,7 +65,8 @@ Related Type 0 commands (`version`, `install`, `help`) are owned by `requirement
 | Trusted source | Fetch only from the configured official channel (project Config / env — not ad hoc URLs in random helpers) |
 | Semver compare | Prefer upgrade when remote is **newer**; **MUST NOT** downgrade without explicit force policy |
 | Integrity | Checksum or digest verification before replace when downloading update artifacts |
-| Atomic install | Download to temp → verify → atomic move/replace of the installed binary |
+| Atomic install | Download to temp → verify → **`chmod 0755`** (not `chmod +x`) → atomic move/replace. Staging **MUST NOT** fall back to `chmod +x` (**0711**). |
+| Dest mode | Global and user-bin shebang dest **MUST** be **0755**. Already-installed `install` and already-latest `self-update` **MUST** heal leftover **0711**/**0700** when the dest is writable. Isolated `GLOBAL_BIN` proof: **TP-LC-10**. Global `self-update`: **TP-LC-25**. |
 | Install type preserved | Per-user vs global/system-wide placement remains consistent with invoker privilege / install policy |
 | Reuse install SSOT | Self-update **MUST** reuse the same install orchestrator primitives as first-time install (no second ad hoc download/replace path) |
 | Output SSOT | All messages via centralized `out_*` |
@@ -114,6 +115,7 @@ Root may write global install path; non-root uses user path. Do not assume root 
 | **No silent downgrade** | Without explicit force policy, refuse remote older than local |
 | **No skip integrity** | Digest/checksum path required for downloaded update artifacts — automatic companion is default; strict pin secondary. Full automatic transparency law: `requirement-shell-automatic-checksum.md` |
 | **No weak atomicity** | Avoid partial replaces that leave a broken binary |
+| **No 0711 shebang dest** | **MUST NOT** `chmod +x` on `mktemp` staging; **MUST NOT** `chmod 0755 \|\| chmod +x`. Unprivileged `/bin/sh: 0: cannot open …: Permission denied` is dest-mode failure. |
 | **No reckless PATH edit** | Only clean PATH when managed bin dir is empty / policy-safe |
 | **No raw I/O** | Use output SSOT; quiet/json channel rules |
 | **No secrets in tree** | Never embed tokens or credentials in update URLs in docs/code; Config/env only |

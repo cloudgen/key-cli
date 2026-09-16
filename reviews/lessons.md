@@ -7,7 +7,7 @@ Durable failure modes. **Always re-check on product review.**
 | L-TYPE-N-01 | TTY empty argv accidentally becomes install-ensure (menu split lost) | `requirement-shell-cli-zero-arguments` TTY menu / non-TTY Type O; TP-CLI-07 **and** TP-CLI-14 | open watch |
 | L-ONLINE-01 | Channel env advertised as a verb, or `CHECKSUM` on help/about | `SCRIPT_URL` is a channel env (not a command); TP-CLI-04/10; TP-CSUM-01 | open watch |
 | L-UNIN-01 | Non-interactive uninstall succeeds without force | TP-LC-05 confirm fail-closed | open watch |
-| L-INST-MODE-01 | Install leaves `0711`/`0700` (chmod +x after mktemp) so non-owners cannot run shell ship unit | absolute `chmod 0755` + heal on reinstall; TP-LC-09/10; local-self-management §2.3.1 | open watch |
+| L-INST-MODE-01 | Install leaves `0711`/`0700` (chmod +x after mktemp) so non-owners cannot run shell ship unit (`/bin/sh: 0: cannot open …: Permission denied`) | absolute `chmod 0755` (no `+x` fallback); heal already-installed / already-latest; isolated `GLOBAL_BIN` **TP-LC-10** · **TP-LC-25** | open watch |
 | L-TRIM-01 | Backup / restore / sudoers verbs reintroduced as if still product law | bootstrap-chain (absent domain); TP-CLI-04/13 | open watch |
 | L-PUSH-VAULT-01 | Bare `git push` uses wrong active SSH vault when default face ≠ repository-user | Pre-git report + bound SSH transport; incident 20260810-001 | open watch |
 | L-SETU-01 | `set -u` crash with unset HOME | TP-CLI-11 | open watch |

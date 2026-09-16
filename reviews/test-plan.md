@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/key-cli` / `./key-cli`  
-**Product VERSION:** 2.2.0  
+**Product VERSION:** 2.2.1  
 **Last plan update:** 2026-09-16  
-**Last suite run:** PASS=364 FAIL=0 SKIP=0 (2026-09-16)
+**Last suite run:** PASS=372 FAIL=0 SKIP=0 (2026-09-16)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
