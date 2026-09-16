@@ -251,7 +251,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** Type O empty-argv install-ensure stays Type 0 (this-login place + Termux `pkg` companion); **MUST NOT** become a sudo/apt install path.
 

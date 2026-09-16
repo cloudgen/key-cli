@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for **idempotency (re-run safety)** of state-changing operations in the **POSIX shell CLI** for sshd-cli.
+This requirement is the **project Single Source of Truth** for **idempotency (re-run safety)** of state-changing operations in the **POSIX shell CLI** for key-cli.
 
 It defines re-run safety for ensure-style shell lifecycle commands (install, PATH integration, login rc create-if-absent, Termux package ensure, self-update, self-uninstall, and related helpers). PATH / profile **bodies** live on `requirement-shell-path-and-shell-support`; this file keeps the re-run matrix. Read-only commands remain outside the “ensure-X” contract except where they must stay safe under repeat invocation.
 
@@ -19,8 +19,8 @@ It defines re-run safety for ensure-style shell lifecycle commands (install, PAT
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Re-running the one-liner or `install` after success | Second `curl … \| sh` or `sshd-cli install` |
-| The other role | Deliberate replace (`--force`) or a real failure that must stay loud | `sshd-cli install --force` |
+| You / this login | Re-running the one-liner or `install` after success | Second `curl … \| sh` or `key-cli install` |
+| The other role | Deliberate replace (`--force`) or a real failure that must stay loud | `key-cli install --force` |
 | Not this file | Empty-argv Case A/B/C wording (peer); checksum algorithm | `requirement-shell-cli-zero-arguments.md` |
 
 | Includes | Excludes |
@@ -30,13 +30,13 @@ It defines re-run safety for ensure-style shell lifecycle commands (install, PAT
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli` (no args) | Command | Second run = already installed |
-| `sshd-cli self-update` | Command | Second run = already latest |
+| `key-cli` (no args) | Command | Second run = already installed |
+| `key-cli self-update` | Command | Second run = already latest |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Re-run the one-liner | If the program is already in user or system bin, a **pipe** or `install` says **already installed**, not help and not a second download. On a **terminal**, bare `sshd-cli` is the menu — that is not this re-run story. | `curl -fsSL …/sshd-cli \| /bin/sh` · `sshd-cli install` |
-| Force a replace | Only `--force` means “download again on purpose.” | `sshd-cli install --force` |
+| Re-run the one-liner | If the program is already in user or system bin, a **pipe** or `install` says **already installed**, not help and not a second download. On a **terminal**, bare `key-cli` is the menu — that is not this re-run story. | `curl -fsSL …/key-cli \| /bin/sh` · `key-cli install` |
+| Force a replace | Only `--force` means “download again on purpose.” | `key-cli install --force` |
 
 ---
 
@@ -88,10 +88,10 @@ Force **MUST NOT** be used as a silent way to skip integrity verification.
 
 ### 2.5 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Implementation file** | Repo root `./sshd-cli` |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Implementation file** | Repo root `./key-cli` |
 | **Install detect SSOT** | `inst_is_installed` / `inst_get_version` |
 | **Install ensure SSOT** | `inst_perform_install` (+ download/atomic helpers) |
 | **Force reinstall var** | `FORCE_REINSTALL` (default `0`); CLI `--force` must set this per `requirement-shell-cli-interface.md` |
@@ -171,7 +171,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** re-run `pkg` on Termux **MUST NOT** hang; a second Linux/Git Bash run **MUST NOT** start wrapping `apt` to “make it idempotent.”
 
@@ -197,7 +197,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (shell idempotency)
 
-A state-changing shell change for sshd-cli is **not done** if any of the following fail:
+A state-changing shell change for key-cli is **not done** if any of the following fail:
 
 1. Second `install` with healthy install and force off exits success without reinstall.  
 2. Second `self-update` when local equals remote and force off exits success without reinstall.  
@@ -234,10 +234,10 @@ A state-changing shell change for sshd-cli is **not done** if any of the followi
 | `docs/requirements/requirement-shell-path-and-shell-support.md` | PATH / profile bodies; sibling unify; fixture TP-IDs |
 | `docs/requirements/requirement-shell-output-requirements.md` | Messages on no-op / already-done paths |
 | `docs/requirements/index.md` | Registry SSOT |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ---
 
 **Last Updated**: 2026-09-09 (PATH bodies → `requirement-shell-path-and-shell-support`)  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; related `requirement-shell-cli-interface.md`; CIAO Principles 1, 2, 3, 11, 12, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

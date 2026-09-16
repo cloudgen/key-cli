@@ -201,7 +201,7 @@ run_test_config_backup() {
         _err=$(sh "${SCRIPT}" setup 2>&1 >/dev/null)
         _ec=$?
         assert_eq "TP-CFG-15 setup non-root exit 1" 1 "$_ec"
-        assert_contains "TP-CFG-15 setup Next root login" "$_err" "root login"
+        assert_contains "TP-CFG-15 setup Next sudo" "$_err" "sudo ${APP_NAME} setup"
     fi
 
     # TP-CFG-16 remove-lpu needs --force off-TTY; non-root still fail closed first
@@ -214,7 +214,7 @@ run_test_config_backup() {
         _err=$(sh "${SCRIPT}" remove-lpu 2>&1 >/dev/null)
         _ec=$?
         assert_eq "TP-CFG-16 remove-lpu non-root exit 1" 1 "$_ec"
-        assert_contains "TP-CFG-16 remove-lpu Next root login" "$_err" "root login"
+        assert_contains "TP-CFG-16 remove-lpu Next sudo" "$_err" "sudo ${APP_NAME} remove-lpu"
     fi
     unset _uid
 
@@ -327,4 +327,35 @@ run_test_config_backup() {
     assert_eq "TP-CFG-24 Termux print-sudoers exit 1" 1 "$_ec"
     assert_contains "TP-CFG-24 Termux print-sudoers not available" "$_err" "not available for termux"
     ci_cleanup_env
+
+    # TP-CFG-25 Termux: setup / remove-lpu fail closed (Type 2 unused)
+    ci_isolated_env
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" setup 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-25 Termux setup exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-25 Termux setup not available" "$_err" "not available for termux"
+    _err=$(HOME="${CI_HOME}" TERMUX_VERSION=1 sh "${SCRIPT}" remove-lpu --force 2>&1 >/dev/null)
+    _ec=$?
+    assert_eq "TP-CFG-25 Termux remove-lpu exit 1" 1 "$_ec"
+    assert_contains "TP-CFG-25 Termux remove-lpu not available" "$_err" "not available for termux"
+    ci_cleanup_env
+
+    # TP-CFG-26 static: key-adm F6 is six product Cmnds, not ALL / tar
+    _fn=$(sed -n '/^key_lpu_sudoers_fragment_text()/,/^key_sudoers_json_text_compact()/p' "${SCRIPT}")
+    assert_contains "TP-CFG-26 F6 backup *" "${_fn}" 'backup *'
+    assert_contains "TP-CFG-26 F6 restore *" "${_fn}" 'restore *'
+    assert_contains "TP-CFG-26 F6 auth-keys add *" "${_fn}" 'auth-keys add *'
+    assert_contains "TP-CFG-26 F6 --json backup *" "${_fn}" '--json backup *'
+    assert_contains "TP-CFG-26 F6 --json restore *" "${_fn}" '--json restore *'
+    assert_contains "TP-CFG-26 F6 --json auth-keys add *" "${_fn}" '--json auth-keys add *'
+    assert_not_contains "TP-CFG-26 F6 no ALL ALL" "${_fn}" 'ALL=(ALL) ALL'
+    assert_not_contains "TP-CFG-26 F6 no /bin/tar" "${_fn}" '/bin/tar'
+    unset _fn
+
+    # TP-CFG-27 static: F7 does not delete the key store; userdel is the account path
+    _fn=$(sed -n '/^key_cmd_remove_lpu()/,/^key_menu_show_on_behalf()/p' "${SCRIPT}")
+    assert_contains "TP-CFG-27 F7 userdel -r" "${_fn}" 'userdel -r'
+    assert_contains "TP-CFG-27 F7 archives kept copy" "${_fn}" 'Archives under'
+    assert_not_contains "TP-CFG-27 F7 no rm -rf store" "${_fn}" 'rm -rf -- "$(key_cli_root)"'
+    unset _fn
 }

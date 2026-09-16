@@ -12,11 +12,11 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 
 ### 1.1 Human-facing
 
-**In one sentence:** This folder’s **project nature** is **software-development**: we write a POSIX `/bin/sh` program people can install (`./sshd-cli`) to **simplify Termux to install sshd** — not a blank starter kit and not a server-maintenance allowlist.
+**In one sentence:** This folder’s **project nature** is **software-development**: we write a POSIX `/bin/sh` program people can install (`./key-cli`) to **backup and restore this login’s `~/.ssh`** — not a blank starter kit and not a server-maintenance allowlist.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Someone building or installing this CLI | Ship unit `./sshd-cli` + `tests/run.sh` |
+| You / this login | Someone building or installing this CLI | Ship unit `./key-cli` + `tests/run.sh` |
 | The other role | A genesis seed (empty law) or a server-maintenance tree (host allowlists) | Those are **not** this workspace |
 | Not this file | Install, help, checksum, storage — peer shell requirements own those tables | `requirement-shell-cli-interface.md` and peers |
 
@@ -27,13 +27,13 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `./sshd-cli` | Program file people install | Live stack (POSIX `/bin/sh`) |
+| `./key-cli` | Program file people install | Live stack (POSIX `/bin/sh`) |
 | This file | Class + residual notes | What kind of work this folder is |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
 | Confirm the stack | Primary language is POSIX `/bin/sh`. There is no `package.json` / compiler. Tests are shell. | `./tests/run.sh` |
-| Look for install rules | They live on the empty-argv and CLI-interface requirements, not here. | Read those peer files; run `sshd-cli help` |
+| Look for install rules | They live on the empty-argv and CLI-interface requirements, not here. | Read those peer files; run `key-cli help` |
 
 ---
 
@@ -90,9 +90,9 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 
 ### 2.7 Implementation Notes (this project)
 
-| Field | Value (sshd-cli) |
+| Field | Value (key-cli) |
 |-------|---------------------|
-| **Project display name** | `sshd-cli` (product root `README.md` H1 SSOT) |
+| **Project display name** | `key-cli` (product root `README.md` H1 SSOT) |
 | **Project class** | software-development |
 | **Class requirement basename** | `requirement-class-software-dev.md` |
 | **Primary language(s)** | `posix-sh` (`/bin/sh`) |
@@ -107,9 +107,9 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | **Linter/formatter** | none as project law (shellcheck optional for maintainers, not required gate) |
 | **Primary runtime / OS family** | POSIX Linux **and Termux** (Android userspace; `PREFIX` bin/etc). Git Bash and Windows cmd are the same **command line for normal user only** class as Termux (Type 1/2 unused). Also compatible UNIX where `/bin/sh` + coreutils/`sha256sum`/`mktemp` exist |
 | **Architectures supported** | any arch with a POSIX sh and the external tools the script invokes (no arch-specific binary) |
-| **Git surface** | used for product publish (`github.com/cloudgen/sshd-cli`) |
-| **Ship unit / install** | yes — repo root `./sshd-cli` + companion `sshd-cli.sha256`; Type 0 online install (peer shell REQs) |
-| **Product version SSOT** | `VERSION="…"` hard-assign in `./sshd-cli` (currently `1.6.0`) |
+| **Git surface** | used for product publish (`github.com/cloudgen/key-cli`) |
+| **Ship unit / install** | yes — repo root `./key-cli` + companion `key-cli.sha256`; Type 0 online install (peer shell REQs) |
+| **Product version SSOT** | `VERSION="…"` hard-assign in `./key-cli` (currently `2.0.3`) |
 
 **Residual ownership table:**
 
@@ -128,13 +128,14 @@ This file is **class law + residual SSOT**, not a second copy of Type 0 lifecycl
 | Idempotency / re-run safety | `requirement-shell-idempotency` | Do not duplicate |
 | Interactive vs non-interactive | `requirement-shell-interactive-vs-noninteractive` | Do not duplicate |
 | Modular prefixes / single-file layout | `requirement-shell-modular-function-design` | Do not duplicate |
-| Domain features / help / about extras | `requirement-domain-sshd` | OpenSSH sshd helper (Termux-first) |
-| Termux-ish `pkg` invoke | `requirement-shell-termux-ish` | This-login `pkg`; not Linux `apt` |
+| Domain features / help / about extras | `requirement-domain-key` | SSH user-key backup/restore |
+| Least-privilege user | `requirement-least-privilege-user` | **key-adm** (one LPU; F1–F7) |
+| Termux-ish detect | `requirement-shell-termux-ish` | Type 1/2 unused; **no** OpenSSH `pkg` |
 | Command line for normal user only | `requirement-shell-cli-interface` · `requirement-shell-termux-ish` | Termux / Git Bash / Windows cmd: Type 1/2 unused; named section on related shell REQs |
 | Coding-style related REQ | `requirement-shell-script-coding` | Specialize-in home; class residual **points** |
 | Actor / role / subject / approver | *none* (considered — **no dest approver**) | No dest review machine |
 | Dest fence conditions | *none* (considered — **no dest fence conditions**) | No dest inbound queue |
-| Login-review hook | *none* (considered — **no login-hook**) | Type 0 sshd helper; no dest review scrap |
+| Login-review hook | *none* (considered — **no login-hook**) | Type 0 key helper; no dest review scrap |
 | Type 1 rc-owner heal | *none* (considered — **this-login writer**) | No elevated `setup` `chown` of another home |
 
 ---
@@ -166,10 +167,10 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 |------|----------|
 | Keep **normal user privilege** (Type 0) only | Implement or enable **admin privilege** (Type 1) or **dedicated system user privilege** (Type 2) |
 | Document Type 1 **unused** and Type 2 **unused** | In-tool `sudo`; wrap `apt` / `dnf` / `yum`; create a dedicated system user |
-| Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
+| Termux: CLI install as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path; wrap `pkg install openssh` |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** residual stack points at those owners; OS family includes Termux / Git Bash / Windows cmd as this class. Related shell REQs **MUST** keep a section with this exact title.
 
@@ -221,9 +222,10 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 | `requirement-shell-interactive-vs-noninteractive` | Mode policy |
 | `requirement-shell-modular-function-design` | Prefixes / single-file modularity |
 | `requirement-shell-script-coding` | Coding-style home (this file points) |
-| `requirement-domain-sshd` | OpenSSH sshd domain SSOT |
+| `requirement-domain-key` | SSH user-key domain SSOT |
+| `requirement-least-privilege-user` | **key-adm** LPU |
 | `requirement-shell-sudoer` | Sudoer features SSOT (JSON, print/generate/submit, `util_sudo`) |
-| `requirement-shell-config-backup` | `backup-config` / `sync-config` (depends on sudoer) |
+| `requirement-shell-config-backup` | `backup` / `restore` (depends on sudoer) |
 | `requirement-sshd-config-backup` | Points at shell-config-backup |
 | `requirement-sudoer-json-file` | Points at shell-sudoer |
 | `requirement-three-layer-privilege-model` | Type 0/1/2; sudoer verbs point at shell-sudoer |
@@ -237,9 +239,10 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 | Date | Status | Note |
 |------|--------|------|
 | 2026-07-19 | Active | Specialized class law for sshd-cli (review fix F1) |
+| 2026-09-16 | Active | Residual retarget: key-cli backup/restore; one LPU **key-adm** |
 
 ---
 
-**Last Updated**: 2026-09-09 (residual: path-and-shell-support)  
-**Owner**: sshd-cli project maintainers  
+**Last Updated**: 2026-09-16 (residual: domain-key + key-adm LPU)  
+**Owner**: Cloudgen Wong  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 4, 5, 20, 21 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

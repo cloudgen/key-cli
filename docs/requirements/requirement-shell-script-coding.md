@@ -6,15 +6,15 @@
 
 ## 1. Purpose
 
-This is the **coding-style related requirement** for sshd-cli (POSIX `/bin/sh`). **Without this file, portable learned lessons arrive raw** and agents treat coding skills as product law. It is the specialize-in home for shell coding rules that are not already owned by modular-function-design, output, or interactive-vs-noninteractive peers.
+This is the **coding-style related requirement** for key-cli (POSIX `/bin/sh`). **Without this file, portable learned lessons arrive raw** and agents treat coding skills as product law. It is the specialize-in home for shell coding rules that are not already owned by modular-function-design, output, or interactive-vs-noninteractive peers.
 
 ### 1.1 Human-facing
 
-**In one sentence:** This file says how the `./sshd-cli` script must be written: prefixes, `set -u`, no capturing a `read` prompt with `$()`, and keep the Protection Zones.
+**In one sentence:** This file says how the `./key-cli` script must be written: prefixes, `set -u`, no capturing a `read` prompt with `$()`, and keep the Protection Zones.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Someone changing `./sshd-cli` | Add a function, keep `Last updated` |
+| You / this login | Someone changing `./key-cli` | Add a function, keep `Last updated` |
 | The other role | Peer files that already own output / prefixes catalog / TTY vs pipe | `requirement-shell-output-requirements.md` |
 | Not this file | Which sshd verbs exist | `requirement-domain-sshd.md` |
 
@@ -25,19 +25,19 @@ This is the **coding-style related requirement** for sshd-cli (POSIX `/bin/sh`).
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `./sshd-cli` | Ship unit | Live style |
-| `sh -n ./sshd-cli` | Syntax check | Must pass |
+| `./key-cli` | Ship unit | Live style |
+| `sh -n ./key-cli` | Syntax check | Must pass |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Add a helper | New name uses the right prefix; do not `$()` `prompt_ask` | Edit `./sshd-cli`; `sh -n ./sshd-cli` |
+| Add a helper | New name uses the right prefix; do not `$()` `prompt_ask` | Edit `./key-cli`; `sh -n ./key-cli` |
 | Change a fatal | Human what-happened / next-step | Keep `out_die` |
 
 ---
 
 ## 2. Core Rules / Requirements (Mandatory)
 
-1. **MUST** keep `set -u` at the top of `./sshd-cli`. **MUST NOT** add global `set -e`.  
+1. **MUST** keep `set -u` at the top of `./key-cli`. **MUST NOT** add global `set -e`.  
 2. **MUST** use the prefix families owned by `requirement-shell-modular-function-design` plus domain **`sshd_*`**.  
 3. **MUST** send product user messages through `out_*` (`requirement-shell-output-requirements`).  
 4. **MUST NOT** capture a `read` helper with `$()` / command substitution (**do-not-capture-read**). `prompt_ask` returns via stdout for class-B data; **new** TTY choice code (including `menu`) **MUST** `read` in the current shell, not `_x=$(prompt_ask …)`.  
@@ -45,19 +45,19 @@ This is the **coding-style related requirement** for sshd-cli (POSIX `/bin/sh`).
 6. **MUST NOT** strip CIAO Protection Zones / `DO NOT MODIFY` dispatcher comments for brevity.  
 7. **MUST** initialize variables used under `set -u` (`: "${VAR:=…}"` or a prior assign).  
 8. **MUST NOT** use this file as a second copy of install or checksum tables.  
-9. **SHOULD** keep `sh -n ./sshd-cli` passing in `tests/test_cli.sh`.  
-10. In-tool sudo wrappers: **`util_sudo`** for `backup-config` only. SSOT: `requirement-shell-sudoer` (this file **points**; wrap slice `requirement-shell-sudo-command` also points).  
+9. **SHOULD** keep `sh -n ./key-cli` passing in `tests/test_cli.sh`.  
+10. In-tool sudo wrappers: **`util_sudo`** for `backup` / `restore` only. SSOT: `requirement-shell-sudoer` (this file **points**; wrap slice `requirement-shell-sudo-command` also points).  
 11. **MUST NOT** `out_die` because `mkdir` of one cache/storage leaf failed while later roots remain untried. Chain SSOT: `requirement-shell-cli-storage`.
 
 ### 2.1 Implementation Notes (this project)
 
 | Item | Value |
 |------|--------|
-| Ship unit | `./sshd-cli` POSIX `/bin/sh` |
+| Ship unit | `./key-cli` POSIX `/bin/sh` |
 | Prefixes in use | `out_` `inst_` `path_` `ver_` `util_` `prompt_` `app_` `sshd_` |
 | `set -u` | yes (file top) |
 | Menu read | `sshd_cmd_menu` calls `read -r` in-function (not `$()` of `prompt_ask`) |
-| Sudo wrap | `util_sudo` (`backup-config` only; `requirement-shell-sudoer`) |
+| Sudo wrap | `util_sudo` (`backup` / `restore` only; `requirement-shell-sudoer`) |
 
 ### 2.2 Why This Requirement Exists (Direct CIAO Alignment)
 
@@ -83,7 +83,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** no sudo-wrapping function; detect helpers stay `sshd_*`; **MUST NOT** add `util_sudo` because a Type 1 ladder exists on other products.
 
@@ -106,7 +106,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 | `docs/requirements/requirement-shell-modular-function-design.md` | Prefix catalog |
 | `docs/requirements/requirement-shell-output-requirements.md` | `out_*` |
 | `docs/requirements/requirement-class-software-dev.md` | Residual points here |
-| `./sshd-cli` | Implementation |
+| `./key-cli` | Implementation |
 
 **Last Updated**: 2026-09-11  
 **Owner**: Cloudgen Wong  

@@ -3,9 +3,9 @@
 Maps **TP-*** coverage to `tests/`.  
 **Suite entry:** `./tests/run.sh`  
 **Ship unit:** `src/key-cli` / `./key-cli`  
-**Product VERSION:** 2.0.2  
+**Product VERSION:** 2.0.3  
 **Last plan update:** 2026-09-16  
-**Last suite run:** PASS=280 FAIL=0 SKIP=0 (2026-09-16)
+**Last suite run:** PASS=295 FAIL=0 SKIP=0 (2026-09-16)
 
 Status: **have** = automated today · **todo** = needed · **optional** · **n/a** · **skip** (environment)
 
@@ -101,6 +101,9 @@ This product **is** online-installable (`SCRIPT_URL`, `self-update`, `version-ch
 | TP-CFG-22 | TTY restore picker unknown choice warns and redisplays | test_config_backup | requirement-shell-config-backup · requirement-shell-interactive-vs-noninteractive | **have** |
 | TP-CFG-23 | path-unsafe username fail closed | test_config_backup | requirement-domain-key | **have** |
 | TP-CFG-24 | Termux `print-sudoers` fail-closed | test_config_backup | requirement-shell-sudoer · requirement-shell-termux-ish | **have** |
+| TP-CFG-25 | Termux `setup` / `remove-lpu` fail-closed | test_config_backup | requirement-least-privilege-user · requirement-shell-termux-ish | **have** |
+| TP-CFG-26 | static key-adm F6 six product Cmnds; no ALL / tar | test_config_backup | requirement-least-privilege-user | **have** |
+| TP-CFG-27 | static F7 `userdel -r`; does not `rm -rf` the store | test_config_backup | requirement-least-privilege-user | **have** |
 
 ### TP-LC (install lifecycle) · TP-CSUM
 

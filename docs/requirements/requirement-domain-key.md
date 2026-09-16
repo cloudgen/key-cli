@@ -123,7 +123,7 @@ JSON `about` **MUST** add `key_cli_root`, `key_adm`, `key_adm_present`.
 
 | Item | Value |
 |------|--------|
-| Product | `key-cli` 2.0.2 |
+| Product | `key-cli` 2.0.3 |
 | Domain prefix | `key_*` |
 | Channel | `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli` |
 | LPU | `key-adm` UID/GID **1666**, home `/etc/key-adm`, F6 `/etc/key-adm/sudoers` |

@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.3] - 2026-09-16
+
+### Fixed
+
+- **key-adm** (the one LPU): `setup` / `remove-lpu` Next names `sudo key-cli …`; Termux fail-closed; F6 is six product Cmnds. Tests **TP-CFG-25** .. **TP-CFG-27**.
+- Active Type 0 / class Implementation Notes retargeted from sshd-cli to **key-cli** (domain-sshd stays history).
+
 ## [2.0.2] - 2026-09-16
 
 ### Fixed

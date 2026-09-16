@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for **all CLI output** of the sshd-cli POSIX shell tool: human messages, machine JSON, channel split (stdout vs stderr), and mode behavior (normal / quiet / JSON / debug).
+This requirement is the **project Single Source of Truth** for **all CLI output** of the key-cli POSIX shell tool: human messages, machine JSON, channel split (stdout vs stderr), and mode behavior (normal / quiet / JSON / debug).
 
 It defines the centralized output system and stdout/stderr channel contracts for this shell project.
 
@@ -17,7 +17,7 @@ It defines the centralized output system and stdout/stderr channel contracts for
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | Reading the terminal or parsing JSON | `sshd-cli version` vs `sshd-cli --json version` |
+| You / this login | Reading the terminal or parsing JSON | `key-cli version` vs `key-cli --json version` |
 | The other role | Automation that must not see banners mixed into JSON | `--json` on stdout; errors still visible |
 | Not this file | Whether to ask a yes/no; whether empty argv installs | Interactive + zero-arguments peers |
 
@@ -28,13 +28,13 @@ It defines the centralized output system and stdout/stderr channel contracts for
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli --json about` | Command | One JSON object |
-| `./sshd-cli` | Program file | `out_*` helpers |
+| `key-cli --json about` | Command | One JSON object |
+| `./key-cli` | Program file | `out_*` helpers |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Read as a person | Colored `[OK]` / `[ERROR]` on a terminal; `--quiet` hides chatter but **not** fatals. | `sshd-cli about` |
-| Read as a machine | Exactly one JSON object on stdout; no human banners. | `sshd-cli --json about` |
+| Read as a person | Colored `[OK]` / `[ERROR]` on a terminal; `--quiet` hides chatter but **not** fatals. | `key-cli about` |
+| Read as a machine | Exactly one JSON object on stdout; no human banners. | `key-cli --json about` |
 
 ---
 
@@ -51,14 +51,14 @@ It defines the centralized output system and stdout/stderr channel contracts for
 | Ad-hoc `echo >&2` diagnostics | `out_warn` / `out_error` / `out_debug` |
 | Second parallel “print helper” that bypasses mode guards | Extend `out_text` / wrappers only |
 
-**Not every `printf` / `echo` is a violation.** The ban targets **product messaging** (what the CLI user or machine consumer sees as the command’s message/JSON). The following exceptions are **allowed** and intentional in this project (aligned with live `./sshd-cli` practice and §2.1.1 below).
+**Not every `printf` / `echo` is a violation.** The ban targets **product messaging** (what the CLI user or machine consumer sees as the command’s message/JSON). The following exceptions are **allowed** and intentional in this project (aligned with live `./key-cli` practice and §2.1.1 below).
 
 ### 2.1.1 Allowed `printf` / `echo` exceptions (this project)
 
-| Exception class | Rule | Live examples in `./sshd-cli` |
+| Exception class | Rule | Live examples in `./key-cli` |
 |-----------------|------|-----------------------------------|
 | **A. Inside output SSOT** | Only `out_text`, `out_json`, and `out_json_error` may `printf` to fd 1/2 for **product** human or JSON lines. Nested `printf … \| sed` used only to escape strings for those emitters is part of the same SSOT. | `out_text` level cases; `out_json` / `out_json_error` body builders |
-| **B. Function return-via-stdout** | A helper may `printf '%s' "$value"` (or `echo "$value"`) **solely** so callers capture it with `$(…)`. That write is a **data return**, not product UI. Callers must capture it; bare top-level invocation must not be used as the user-facing message path. | `inst_self_uninstall_determine_bin`, `util_get_install_bin_path`, `inst_get_version`, `util_resolve_storage`, `util_get_current_shell`, `sshd_ifconfig_ipv4`, `sshd_lan_ipv4`, `sshd_connect_cmd`, `prompt_ask` (answer/default return only; prompt text still via `out_*`) |
+| **B. Function return-via-stdout** | A helper may `printf '%s' "$value"` (or `echo "$value"`) **solely** so callers capture it with `$(…)`. That write is a **data return**, not product UI. Callers must capture it; bare top-level invocation must not be used as the user-facing message path. | `inst_self_uninstall_determine_bin`, `util_get_install_bin_path`, `inst_get_version`, `util_resolve_storage`, `util_get_current_shell`, `key_adm_user`, `key_cli_root`, `prompt_ask` (answer/default return only; prompt text still via `out_*`) |
 | **C. File I/O (redirected)** | `printf … >> "$file"` that appends config/content to a path is file mutation, not product stdout/stderr messaging. User-visible “what changed” lines still go through `out_*`. | `path_add_bashrc`, `path_ensure_profile`, `path_add_zshrc`, `path_add_fish` |
 | **D. Tool protocol / computation pipes** | `printf` feeding another program (checksum verify, filters) with product status still reported via `out_*`. | `inst_perform_install_download_with_checksum` → `printf … \| sha256sum -c` |
 | **E. Command-sub fallbacks** | `cmd \|\| echo "unknown"` (or similar) assigned into a variable for logic only. | `USERNAME="$(id -un … \|\| echo "unknown")"`, remote version empty fallbacks, boolean strings built for `out_json` fields |
@@ -97,7 +97,7 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 1. **Errors never as the primary success payload on stdout** in a way that corrupts JSON pipes — fatal paths use `out_die` / `out_json_error`.  
 2. **JSON purity:** In JSON mode, stdout is reserved for the structured result; no colors, banners, or progress mixed in.  
 3. **Capture pattern for agents/CI:**  
-   `sshd-cli --json <cmd> 2>err.log` → stdout = JSON; stderr = diagnostics as mode allows.  
+   `key-cli --json <cmd> 2>err.log` → stdout = JSON; stderr = diagnostics as mode allows.  
 4. **No secrets** on either channel (tokens, passwords, private keys).
 
 ### 2.4 Mode behavior (portable)
@@ -139,10 +139,10 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 ### 2.6 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Implementation file** | Repo root `./sshd-cli` |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Implementation file** | Repo root `./key-cli` |
 | **Human SSOT** | `out_text` |
 | **JSON SSOT** | `out_json` / `out_json_error` |
 | **Mode flags** | `QUIET`, `JSON`, `DEBUG`, `TTY` (defaults `0` except TTY when stdin/stdout are TTYs) |
@@ -152,7 +152,7 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 #### Live `out_*` inventory
 
-| Function | Role in `./sshd-cli` |
+| Function | Role in `./key-cli` |
 |----------|-------------------------|
 | `out_text` | Human SSOT; JSON short-circuit; quiet filter; channel by level |
 | `out_success` / `out_info` / `out_warn` / `out_error` | Level wrappers |
@@ -180,7 +180,7 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 ```sh
 # Example — nested JSON via @key (this product: status fields), not a quoted string:
-# out_json "success" "" "sshd_running" "yes" "@connect" '"ssh -p 8022 user@10.0.0.2"'
+# out_json "success" "" "key_adm_present" "false" "@store" '"/var/key-cli"'
 ```
 
 `out_json` emits a single-line object:
@@ -237,7 +237,7 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 1. Add raw `echo`, `printf`, or direct fd writes for **product** user/machine messages outside the central output functions (do not “ban” legitimate §2.1.1 exceptions).  
 2. Misuse return-via-stdout, file redirects, or tool pipes as cover for user-facing banners without `out_*`.  
-3. Cite `template-*.md` or `skill-*.md` in **product source** (`./sshd-cli`) as output authority — cite this requirement file only.  
+3. Cite `template-*.md` or `skill-*.md` in **product source** (`./key-cli`) as output authority — cite this requirement file only.  
 4. Bypass `out_*` for “quick debug” on stdout.  
 5. Remove or weaken **`--json` forces quiet** / human-suppression in `out_text`.  
 6. Emit human banners on stdout while claiming JSON mode.  
@@ -254,7 +254,7 @@ Align with SSOT-of-stdout and SSOT-of-stderr terms:
 
 ## 5. Definition of done (shell output requirements)
 
-Output-related work for sshd-cli is **not done** if any of the following fail:
+Output-related work for key-cli is **not done** if any of the following fail:
 
 1. All new **product** user-facing messages use `out_*` only (exceptions limited to §2.1.1).  
 2. Non-product `printf`/`echo` sites document their exception class in the function comment block when they are intentional helpers.  
@@ -276,10 +276,10 @@ Output-related work for sshd-cli is **not done** if any of the following fail:
 | `docs/requirements/requirement-shell-modular-function-design.md` | `out_*` prefix ownership |
 | `docs/requirements/requirement-shell-interactive-vs-noninteractive.md` | Mode interaction with quiet/json |
 | `docs/requirements/index.md` | Registry SSOT |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ---
 
 **Last Updated**: 2026-09-05 (§1.1 Human-facing; printf exception classes §2.1.1; `path_ensure_profile`)  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 5, 14, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

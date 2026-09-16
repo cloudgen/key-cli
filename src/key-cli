@@ -56,8 +56,8 @@ APP_NAME="key-cli"
 : "${SHORT_DESCRIPTION:=${APP_DESC}}"
 : "${DESCRIPTION:=POSIX /bin/sh CLI: archive this login ~/.ssh into /var/key-cli as dated tar.gz, restore it, and (as key-adm) do the same on behalf of other users.}"
 # Product version SSOT (semver). Extractors use: grep '^VERSION="'
-VERSION="2.0.2"
-: "${VERSION:=2.0.2}"
+VERSION="2.0.3"
+: "${VERSION:=2.0.3}"
 
 # Runtime flags (safe defaults)
 : "${QUIET:=0}"
@@ -4119,7 +4119,7 @@ key_cmd_setup() {
         out_die "setup is not available for $(key_host_normal_user_only_label). Next: use a POSIX Linux host as root."
     fi
     if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
-        out_die "Creating ${KEY_ADM_USER} needs a root login. Next: re-run as root: ${APP_NAME} setup"
+        out_die "Creating ${KEY_ADM_USER} needs a root login. Next: sudo ${APP_NAME} setup (or a root login)."
     fi
     if ! command -v useradd >/dev/null 2>&1; then
         out_die "useradd not found. Next: install passwd/shadow-utils, then ${APP_NAME} setup."
@@ -4190,10 +4190,10 @@ key_cmd_remove_lpu() {
     : "${FORCE:=0}"
     : "${KEY_ADM_USER:=key-adm}"
     if key_is_normal_user_only_cli; then
-        out_die "remove-lpu is not available for $(key_host_normal_user_only_label)."
+        out_die "remove-lpu is not available for $(key_host_normal_user_only_label). Next: use a POSIX Linux host as root."
     fi
     if [ "$(id -u 2>/dev/null || echo 1)" -ne 0 ]; then
-        out_die "Removing ${KEY_ADM_USER} needs a root login. Next: re-run as root: ${APP_NAME} remove-lpu"
+        out_die "Removing ${KEY_ADM_USER} needs a root login. Next: sudo ${APP_NAME} remove-lpu --force (or a root login)."
     fi
     if [ "${FORCE}" -ne 1 ]; then
         if [ "${TTY}" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
@@ -4492,7 +4492,7 @@ app_about() {
     : "${JSON:=0}"
     : "${QUIET:=0}"
     : "${APP_NAME:=key-cli}"
-    : "${VERSION:=2.0.2}"
+    : "${VERSION:=2.0.3}"
     if [ -n "${PREFIX-}" ] && [ -d "${PREFIX}/bin" ]; then
         : "${GLOBAL_BIN:=${PREFIX}/bin}"
     else
@@ -4611,7 +4611,7 @@ app_about() {
 
 app_version() {
     : "${APP_NAME:=key-cli}"
-    : "${VERSION:=2.0.2}"
+    : "${VERSION:=2.0.3}"
     : "${JSON:=0}"
     if [ "${JSON}" -eq 1 ]; then
         out_json "version" "" "app" "${APP_NAME}" "version" "${VERSION}"

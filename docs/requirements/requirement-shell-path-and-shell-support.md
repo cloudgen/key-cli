@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This file is the **topic-owner** for **shell-rc** edits on sshd-cli: after a **user-bin** install, this login can run `sshd-cli` by name, and an SSH login can reach that PATH.
+This file is the **topic-owner** for **shell-rc** edits on key-cli: after a **user-bin** install, this login can run `key-cli` by name, and an SSH login can reach that PATH.
 
 It owns **path-ensure** (one shared `USER_BIN` line on interactive rc) and **profile-ensure** (create `~/.profile` if missing so a login shell sources `.bashrc`). It also owns **sibling unify** so another similar CLI does not, *by design*, make `.bashrc` non-compliant; **heal** on every `install`; **scoped uninstall**; and **detect** via a Type 0 `rc-test` (not a lock on the file).
 
@@ -17,12 +17,12 @@ It owns **path-ensure** (one shared `USER_BIN` line on interactive rc) and **pro
 
 ### 1.1 Human-facing
 
-**In one sentence:** After `sshd-cli install`, this login’s desk note (`.bashrc`) gets “also look in `~/.local/bin`,” and if the door note (`.profile`) is missing the program hangs one that sources `.bashrc` — without wiping notes other programs already wrote.
+**In one sentence:** After `key-cli install`, this login’s desk note (`.bashrc`) gets “also look in `~/.local/bin`,” and if the door note (`.profile`) is missing the program hangs one that sources `.bashrc` — without wiping notes other programs already wrote.
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | The person who ran install | `sshd-cli install` |
-| The other role | Tests that point `BASHRC` at a throw-away folder | `sshd-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| You / this login | The person who ran install | `key-cli install` |
+| The other role | Tests that point `BASHRC` at a throw-away folder | `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
 | Not this file | Copying the program into `~/.local/bin`; starting sshd | `requirement-shell-self-management.md` · `requirement-domain-sshd.md` |
 
 | Includes | Excludes |
@@ -32,15 +32,15 @@ It owns **path-ensure** (one shared `USER_BIN` line on interactive rc) and **pro
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli install` | Command | Companion writes PATH + profile |
-| `sshd-cli rc-test` | Test-purpose command | Create / modify / no-op against a temp folder |
-| `sshd-cli help` | Command | Environment lists `BASHRC`; testers listed **apart** from operational verbs |
+| `key-cli install` | Command | Companion writes PATH + profile |
+| `key-cli rc-test` | Test-purpose command | Create / modify / no-op against a temp folder |
+| `key-cli help` | Command | Environment lists `BASHRC`; testers listed **apart** from operational verbs |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| Install for yourself | Program file goes in `USER_BIN`; PATH line is added once; missing `.profile` is created. A second install does not duplicate the PATH line. | `sshd-cli install` |
-| Prove PATH without touching this login’s real `.bashrc` | A temp folder is the scratch pad. Real home rc stays still. | `sshd-cli rc-test --root "$tmpdir" --file bashrc --case create` |
-| Remove this program while other tools remain in `~/.local/bin` | PATH line stays. Only this product’s installer comments may go. | `sshd-cli --force self-uninstall` |
+| Install for yourself | Program file goes in `USER_BIN`; PATH line is added once; missing `.profile` is created. A second install does not duplicate the PATH line. | `key-cli install` |
+| Prove PATH without touching this login’s real `.bashrc` | A temp folder is the scratch pad. Real home rc stays still. | `key-cli rc-test --root "$tmpdir" --file bashrc --case create` |
+| Remove this program while other tools remain in `~/.local/bin` | PATH line stays. Only this product’s installer comments may go. | `key-cli --force self-uninstall` |
 
 ---
 
@@ -73,16 +73,16 @@ Several similar CLIs **MAY** write the same login’s `.bashrc`. They **MUST** s
 | Use the exact bash/zsh line `export PATH="<USER_BIN>:$PATH"` (`USER_BIN` default `${HOME}/.local/bin`) | A second dialect (`$HOME` vs the expanded path, extra quotes, a different prefix) that would miss the exact-line check |
 | Fish: exact `set -gx PATH <USER_BIN> $PATH` | A second Fish dialect |
 | If that exact PATH line already exists (this product or a sibling), **do not** append a second `export PATH=` | Duplicate the exact export |
-| **MAY** append **only** `# Added by sshd-cli installer (<VERSION>)` when the shared PATH line is already present and this product’s comment is absent | Rewrite `# Added by <other-app> installer …` or any other product’s comment |
+| **MAY** append **only** `# Added by key-cli installer (<VERSION>)` when the shared PATH line is already present and this product’s comment is absent | Rewrite `# Added by <other-app> installer …` or any other product’s comment |
 | Match the **exact** export line, not a `USER_BIN` substring | Treat a comment or unrelated line that contains `USER_BIN` as already-good |
 
-The PATH line is **shared**. Compliance is “`USER_BIN` is on PATH,” not “only sshd-cli’s sticker is on the note.”
+The PATH line is **shared**. Compliance is “`USER_BIN` is on PATH,” not “only key-cli’s sticker is on the note.”
 
 ### 2.3 Append, never replace (measure 2)
 
 | MUST | MUST NOT |
 |------|----------|
-| Create `BASHRC` if missing (header with `sshd-cli` / `VERSION`, then PATH) | `printf … >` an **existing** `.bashrc` / `.zshrc` / Fish config |
+| Create `BASHRC` if missing (header with `key-cli` / `VERSION`, then PATH) | `printf … >` an **existing** `.bashrc` / `.zshrc` / Fish config |
 | Keep the prior body; append PATH if the exact line is absent | Truncate or rewrite the whole file to “ensure PATH” |
 | Create `.profile` only when **absent** | Overwrite an existing `.profile` body |
 | No-op when this product’s `VERSION` comments **and** the exact export already match (file bytes unchanged) | Replace a dongle or user rc |
@@ -95,10 +95,10 @@ A sibling that “ensures PATH” by writing a fresh file is how the first app�
 
 | Situation | This product MAY remove | MUST NOT remove |
 |-----------|-------------------------|-----------------|
-| Other files still in `USER_BIN` | **Only** `# Added by sshd-cli installer …` comments | The shared `export PATH=` line; other apps’ comments; `.profile`; unrelated user lines |
+| Other files still in `USER_BIN` | **Only** `# Added by key-cli installer …` comments | The shared `export PATH=` line; other apps’ comments; `.profile`; unrelated user lines |
 | `USER_BIN` empty or missing | This product’s comments **and** the shared PATH line | `.profile`; unrelated user lines |
 
-**MUST** match `# Added by sshd-cli installer` (this `APP_NAME`).  
+**MUST** match `# Added by key-cli installer` (this `APP_NAME`).  
 **MUST NOT** use `/# Added by .* installer/d` while other tools remain.  
 **MUST NOT** delete `.profile`.  
 Root/global uninstall **MUST NOT** edit this-login rc PATH (system `GLOBAL_BIN` is already on PATH).
@@ -116,7 +116,7 @@ There is **no** OS lock that stops a naive other program from rewriting `.bashrc
 
 User-bin install only. **MUST NOT** run path-ensure for a root/global place into `GLOBAL_BIN`.
 
-Re-running `sshd-cli install` **MUST** restore a missing exact PATH line without duplicating it. That is recovery after a bad sibling, not a file lock.
+Re-running `key-cli install` **MUST** restore a missing exact PATH line without duplicating it. That is recovery after a bad sibling, not a file lock.
 
 ### 2.6 Detect, do not police (measure 5)
 
@@ -131,10 +131,10 @@ This product **MUST NOT** `chattr +i`, flock, or otherwise lock `.bashrc` agains
 **`rc-test` argv (normative sample):**
 
 ```text
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case create
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case modify
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case noop
-sshd-cli rc-test --root "$tmpdir" --file profile --case create
+key-cli rc-test --root "$tmpdir" --file bashrc --case create
+key-cli rc-test --root "$tmpdir" --file bashrc --case modify
+key-cli rc-test --root "$tmpdir" --file bashrc --case noop
+key-cli rc-test --root "$tmpdir" --file profile --case create
 ```
 
 | Flag | Meaning |
@@ -163,14 +163,14 @@ Helpers: `path_add_shell` (orchestrator), `path_add_bashrc`, `path_add_zshrc`, `
 
 ### 2.8 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Implementation** | Repo root `./sshd-cli` (`path_add_*`, `path_ensure_profile`, `inst_ensure_companion`, `inst_self_uninstall_cleanup_path`) |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Implementation** | Repo root `./key-cli` (`path_add_*`, `path_ensure_profile`, `inst_ensure_companion`, `inst_self_uninstall_cleanup_path`) |
 | **USER_BIN** | `${HOME}/.local/bin` |
 | **Exact PATH line** | `export PATH="<USER_BIN>:$PATH"` |
-| **Installer comment** | `# Added by sshd-cli installer (<VERSION>)` |
-| **Profile sample** | `# BEGIN sshd-cli profile source-bashrc` … source `${HOME}/.bashrc` … `# END sshd-cli profile source-bashrc` |
+| **Installer comment** | `# Added by key-cli installer (<VERSION>)` |
+| **Profile sample** | `# BEGIN key-cli profile source-bashrc` … source `${HOME}/.bashrc` … `# END key-cli profile source-bashrc` |
 | **Companion call site** | `inst_ensure_companion` on `install` / non-interactive empty-argv (including already-installed binary no-op) |
 | **Privilege** | Type 0 this-login only |
 
@@ -182,23 +182,23 @@ Helpers: `path_add_shell` (orchestrator), `path_add_bashrc`, `path_add_zshrc`, `
 | Profile create-if-absent; never overwrite (**TP-LC-12** / **TP-LC-14**) | **Implemented** (`path_ensure_profile`; write path still `${HOME}/.profile`, not `PROFILE` env) |
 | Heal on every `install` companion | **Implemented** |
 | Empty-dir uninstall keeps shared PATH while `USER_BIN` has files | **Implemented** |
-| Uninstall comment match **only** `sshd-cli` (not `# Added by .* installer`) | **Implemented** |
+| Uninstall comment match **only** `key-cli` (not `# Added by .* installer`) | **Implemented** |
 | Exact-line match on zsh / Fish (not `USER_BIN` substring) | **Implemented** |
 | Honor `ZSHRC` / `FISH_CONFIG` / `PROFILE` env | **Implemented** |
 | Comment-only append when sibling already wrote the exact PATH | **Implemented** (MAY) |
 | `rc-test` routed; help testers heading | **Implemented** (`path_rc_test`; **TP-LC-31** · **TP-CLI-18**) |
 | Login-hook | **Unused** (honest) |
 
-#### Worked samples (this project — from `./sshd-cli`)
+#### Worked samples (this project — from `./key-cli`)
 
 **Invocation (test-purpose, listed apart from operational help):**
 
 ```sh
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case create
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case modify
-sshd-cli rc-test --root "$tmpdir" --file bashrc --case noop
-sshd-cli rc-test --root "$tmpdir" --file profile --case create
-sshd-cli --json rc-test --root "$tmpdir" --file bashrc --case create
+key-cli rc-test --root "$tmpdir" --file bashrc --case create
+key-cli rc-test --root "$tmpdir" --file bashrc --case modify
+key-cli rc-test --root "$tmpdir" --file bashrc --case noop
+key-cli rc-test --root "$tmpdir" --file profile --case create
+key-cli --json rc-test --root "$tmpdir" --file bashrc --case create
 ```
 
 **Sibling-unify comment-only** (exact PATH already present; MAY append this product’s sticker):
@@ -210,7 +210,7 @@ if ! grep -qF "${_comment}" "$bashrc" 2>/dev/null; then
 fi
 ```
 
-**Profile create-if-absent** (never overwrite; honor `PROFILE`): helpers `path_ensure_profile` + `path_add_shell`. Bodies live in `./sshd-cli`.
+**Profile create-if-absent** (never overwrite; honor `PROFILE`): helpers `path_ensure_profile` + `path_add_shell`. Bodies live in `./key-cli`.
 
 ### 2.9 Why This Requirement Exists (Direct CIAO Alignment)
 
@@ -246,7 +246,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` stays Type 0 (`requirement-shell-termux-ish`) | Recommend `sudo curl \| sh` so PATH ensure runs as root |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** PATH / profile ensure stay Type 0 this-login file writes. Tests retarget `BASHRC` to a temp folder — they **MUST NOT** require `sudo` or the developer’s real home.
 
@@ -277,7 +277,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (path and shell support)
 
-Work claiming PATH / login-rc support for sshd-cli is **not done** if any of the following fail:
+Work claiming PATH / login-rc support for key-cli is **not done** if any of the following fail:
 
 1. User-bin `install` creates `BASHRC` if missing and appends the exact PATH line if absent.  
 2. Existing rc body is kept.  
@@ -302,7 +302,7 @@ Work claiming PATH / login-rc support for sshd-cli is **not done** if any of the
 | `docs/requirements/requirement-shell-output-requirements.md` | `out_*`; class-C file printf |
 | `docs/requirements/requirement-shell-termux-ish.md` | Termux `pkg` (not rc) |
 | `docs/requirements/requirement-domain-sshd.md` | Help `install` row names `.bashrc` / `.profile` |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ## Design-time verification
 
@@ -328,5 +328,5 @@ Work claiming PATH / login-rc support for sshd-cli is **not done** if any of the
 **Map:** `reviews/test-plan.md`
 
 **Last Updated**: 2026-09-09  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; **CIAO** (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

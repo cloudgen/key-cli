@@ -129,6 +129,7 @@ On Termux / Git Bash / Windows cmd: Type 2 **MUST** stay unused. `setup` / `remo
 |----------------|-------|--------|
 | **TP-CFG-08** | `tests/test_config_backup.sh` | have |
 | **TP-CFG-15** · **TP-CFG-16** | `tests/test_config_backup.sh` | have |
+| **TP-CFG-25** · **TP-CFG-26** · **TP-CFG-27** | `tests/test_config_backup.sh` | have |
 | **TP-KEY-02** · **TP-KEY-07** | `tests/test_cli.sh` | have |
 
 **Matrix:** `reviews/requirement-test-matrix.md`  

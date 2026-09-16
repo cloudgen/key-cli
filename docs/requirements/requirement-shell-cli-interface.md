@@ -304,7 +304,7 @@ Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`
 
 ## 5. Definition of done (CLI interface)
 
-This requirement is satisfied for the sshd-cli shell CLI when all of the following hold:
+This requirement is satisfied for the key-cli shell CLI when all of the following hold:
 
 1. Every command in §2.6 is routed and documented, including test-purpose `rc-test`.  
 2. Global flags in §2.6 are parsed and honored.  
@@ -329,10 +329,10 @@ This requirement is satisfied for the sshd-cli shell CLI when all of the followi
 | `docs/requirements/requirement-shell-modular-function-design.md` | Prefix ownership (`app_`, `inst_`, `out_*`) |
 | `docs/requirements/requirement-shell-termux-ish.md` | Termux detect / `pkg`; Git Bash is same privilege class |
 | `docs/requirements/index.md` | Registry SSOT |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ---
 
 **Last Updated**: 2026-09-13 (TTY unknown menu choice redisplays that layer; dual mention with domain)  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 5, 6, 10, 16, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

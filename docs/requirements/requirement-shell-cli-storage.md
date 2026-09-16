@@ -4,10 +4,10 @@
 
 ## 1. Purpose
 
-This file is the single home for **where scratch and cache live** for a run of `sshd-cli`: one per-user folder, one resolver, wired from `app_main` and shown on `about`.
+This file is the single home for **where scratch and cache live** for a run of `key-cli`: one per-user folder, one resolver, wired from `app_main` and shown on `about`.
 
 **Scope:** Resolve priority chain; isolation; `util_resolve_storage` contract; `EFFECTIVE_STORAGE_DIR` / `TMPDIR` export; about human + JSON fields.  
-**Out of scope (cited, not re-owned):** Binary install paths (`USER_BIN` / `GLOBAL_BIN`); domain project trees (sshd-cli does not keep a separate project tree; only scratch/cache); companion checksum; PATH shell-rc (`requirement-shell-path-and-shell-support`).
+**Out of scope (cited, not re-owned):** Binary install paths (`USER_BIN` / `GLOBAL_BIN`); domain project trees (key-cli does not keep a separate project tree; only scratch/cache); companion checksum; PATH shell-rc (`requirement-shell-path-and-shell-support`).
 
 ### 1.1 Human-facing
 
@@ -15,23 +15,23 @@ This file is the single home for **where scratch and cache live** for a run of `
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | The Unix login running the CLI | `sshd-cli about` shows the chosen folder |
+| You / this login | The Unix login running the CLI | `key-cli about` shows the chosen folder |
 | The other role | Another login on the same host | Their cache **must not** be this login’s folder |
 | Not this file | Where the **program binary** is installed (`~/.local/bin` vs `/usr/local/bin`) | Install-path law on zero-arguments / self-management |
 
 | Includes | Excludes |
 |----------|----------|
-| One resolver; `about` fields for the chosen path | Domain project trees (sshd-cli does not keep a separate project tree; only scratch/cache) |
-| Temp downloads under that root | Hard-coded `/tmp/sshd-cli` dumps |
+| One resolver; `about` fields for the chosen path | Domain project trees (key-cli does not keep a separate project tree; only scratch/cache) |
+| Temp downloads under that root | Hard-coded `/tmp/key-cli` dumps |
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli about` | Command | Human + JSON storage fields |
-| `./sshd-cli` | Program file | `util_resolve_storage` |
+| `key-cli about` | Command | Human + JSON storage fields |
+| `./key-cli` | Program file | `util_resolve_storage` |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| See where scratch went | About names the effective folder and the persistent cache fallback. Two logins must not share one directory. | `sshd-cli about` · `sshd-cli --json about` |
+| See where scratch went | About names the effective folder and the persistent cache fallback. Two logins must not share one directory. | `key-cli about` · `key-cli --json about` |
 
 ---
 
@@ -40,7 +40,7 @@ This file is the single home for **where scratch and cache live** for a run of `
 ### 2.1 Single resolver SSOT
 
 1. **MUST** keep **one** authoritative storage-resolve helper: **`util_resolve_storage`**.  
-2. New code that needs a product scratch/cache **root** **MUST** call `util_resolve_storage` (or `mktemp` under a path it returned) — **MUST NOT** introduce parallel hard-coded `/tmp/sshd-cli` dumps.  
+2. New code that needs a product scratch/cache **root** **MUST** call `util_resolve_storage` (or `mktemp` under a path it returned) — **MUST NOT** introduce parallel hard-coded `/tmp/key-cli` dumps.  
 3. Resolver **MUST** print the chosen directory path on **stdout** for `$(util_resolve_storage)` capture (data return — not product UI).  
 4. User-visible failure about storage **MUST** use Output SSOT (`out_die` / structured error as mode requires).
 
@@ -51,8 +51,8 @@ Walk the chain. Parent **must exist** before `mkdir` of a `cache` leaf (except T
 | Order | Condition | Path shape |
 |-------|-----------|------------|
 | 1 | `/dev/shm` exists | `/dev/shm/${APP_NAME}-${USERNAME}` (mkdir fail-soft) |
-| 2a | Termux (`sshd_is_termux`) | `${PREFIX}/tmp/${APP_NAME}-${USERNAME}` |
-| 2b | Git Bash (`sshd_is_git_bash`) | `${HOME}/AppData/Local/Temp/cache/${APP_NAME}-${USERNAME}` when that Temp parent exists; else `/c/Users/${USERNAME}/AppData/Local/Temp/cache/${APP_NAME}-${USERNAME}` |
+| 2a | Termux (`key_is_termux`) | `${PREFIX}/tmp/${APP_NAME}-${USERNAME}` |
+| 2b | Git Bash (`key_is_git_bash`) | `${HOME}/AppData/Local/Temp/cache/${APP_NAME}-${USERNAME}` when that Temp parent exists; else `/c/Users/${USERNAME}/AppData/Local/Temp/cache/${APP_NAME}-${USERNAME}` |
 | 3 | `$TEMP` defined and exists | `${TEMP}/cache/${APP_NAME}-${USERNAME}` |
 | 4 | `/tmp` exists | `/tmp/cache/${APP_NAME}-${USERNAME}`; else `/tmp/${APP_NAME}-${USERNAME}` |
 | 5 | Fallback | `STORAGE_DIR` (`${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}`, env-overridable) |
@@ -162,11 +162,11 @@ Storage resolve work for key-cli is **not done** if any of the following fail:
 | `docs/requirements/requirement-shell-modular-function-design.md` | `util_*` ownership |
 | `docs/requirements/requirement-shell-output-requirements.md` | about JSON via `out_json` |
 | `docs/requirements/requirement-shell-self-management.md` | about lifecycle |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 | `tests/test_cli.sh` | Storage diagnostics tests |
 
 ---
 
 **Last Updated**: 2026-09-11  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 4, 5, 11, 19, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

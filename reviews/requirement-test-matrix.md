@@ -1,7 +1,7 @@
 # Requirement ↔ test matrix — key-cli
 
 **Updated:** 2026-09-16  
-**Product VERSION:** 2.0.2  
+**Product VERSION:** 2.0.3  
 **Suite:** `tests/run.sh`
 
 | Requirement key | Area | TP families | Coverage notes |
@@ -25,7 +25,7 @@
 | requirement-sshd-config-backup | backup | TP-CFG-01..24 | Points at shell-config-backup |
 | requirement-sudoer-json-file | privilege | TP-CFG-06, TP-CFG-07 | Points at shell-sudoer |
 | requirement-three-layer-privilege-model | privilege | TP-CFG-06, TP-CFG-07 | Points sudoer verbs at shell-sudoer |
-| requirement-least-privilege-user | privilege | TP-CFG-08, TP-CFG-15, TP-CFG-16, TP-KEY-02, TP-KEY-07 | on-behalf refuse; setup/remove-lpu root-only; help `remove-lpu`; on-behalf hide |
+| requirement-least-privilege-user | privilege | TP-CFG-08, TP-CFG-15, TP-CFG-16, TP-CFG-25..27, TP-KEY-02, TP-KEY-07 | on-behalf refuse; setup/remove-lpu root-only; Termux unused; F6 six Cmnds; F7 keeps store |
 | requirement-shell-sudo-command | shell | TP-CFG-01, TP-CFG-06 | Points wrap at shell-sudoer |
 | requirement-shell-termux-ish | shell | TP-LC-15, TP-LC-16, TP-LC-18, TP-LC-19, TP-KEY-04, TP-CLI-04 | not Termux: `pkg` not invoked; Termux mock: **no** `pkg install openssh`; no `wake-lock` in help |
 | requirement-shell-script-coding | shell | TP-CLI-01, TP-CLI-11, TP-CLI-20, TP-KEY-09 | `sh -n`; `set -u` with HOME unset; mkdir fail-soft; no `$()` of prompt helpers |

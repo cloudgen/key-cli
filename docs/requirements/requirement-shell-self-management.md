@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-This requirement is the **project Single Source of Truth** for **CLI self-management** of the sshd-cli POSIX shell tool: inspecting, upgrading, and removing its own installed binary (and related install artifacts) safely—especially for tools installed via one-command online install (`curl | sh`)—without requiring a separate package-manager workflow for routine updates.
+This requirement is the **project Single Source of Truth** for **CLI self-management** of the key-cli POSIX shell tool: inspecting, upgrading, and removing its own installed binary (and related install artifacts) safely—especially for tools installed via one-command online install (`curl | sh`)—without requiring a separate package-manager workflow for routine updates.
 
 It defines lifecycle capabilities and safety rules for this shell project’s self-management commands.
 
@@ -19,7 +19,7 @@ It defines lifecycle capabilities and safety rules for this shell project’s se
 
 | Box | Meaning | Example |
 |-----|---------|---------|
-| You / this login | The person who installed the CLI | `sshd-cli version-check` · `sshd-cli self-update` |
+| You / this login | The person who installed the CLI | `key-cli version-check` · `key-cli self-update` |
 | The other role | Empty argv (TTY menu / pipe install-ensure) | `requirement-shell-cli-zero-arguments.md` |
 | Not this file | apt/apk, host packages, dedicated-account app start/stop | Out of scope for this product |
 
@@ -30,14 +30,14 @@ It defines lifecycle capabilities and safety rules for this shell project’s se
 
 | Surface | What you open | What for |
 |---------|---------------|----------|
-| `sshd-cli about` | Command | Installed? where? |
-| `sshd-cli self-uninstall` | Command | Remove with confirm or `--force` |
+| `key-cli about` | Command | Installed? where? |
+| `key-cli self-uninstall` | Command | Remove with confirm or `--force` |
 
 | You do… | What it means | What you type |
 |---------|---------------|---------------|
-| See if a newer file exists | Compare local version to the channel. Do not mutate the install. | `sshd-cli version-check` · `sshd-cli --json version-check` |
-| Update | If the channel is newer, replace the installed file. If already latest, say so. | `sshd-cli self-update` |
-| Remove | JSON without `--force` **must fail** with “confirm required,” not fake success. | `sshd-cli --json self-uninstall` · `sshd-cli --force self-uninstall` |
+| See if a newer file exists | Compare local version to the channel. Do not mutate the install. | `key-cli version-check` · `key-cli --json version-check` |
+| Update | If the channel is newer, replace the installed file. If already latest, say so. | `key-cli self-update` |
+| Remove | JSON without `--force` **must fail** with “confirm required,” not fake success. | `key-cli --json self-uninstall` · `key-cli --force self-uninstall` |
 
 ---
 
@@ -121,17 +121,17 @@ Root may write global install path; non-root uses user path. Do not assume root 
 
 ### 2.8 Implementation Notes (this project)
 
-| Item | Value for sshd-cli |
+| Item | Value for key-cli |
 |------|------------------------|
-| **Product / binary** | `sshd-cli` (`APP_NAME`) |
-| **Implementation file** | Repo root `./sshd-cli` |
+| **Product / binary** | `key-cli` (`APP_NAME`) |
+| **Implementation file** | Repo root `./key-cli` |
 | **Dispatcher** | `app_main` routes `version-check` → `ver_check`; `self-update` → `inst_self_update`; `self-uninstall` → `inst_self_uninstall`; argv `version` → `app_version`; `about` → `app_about`. TTY **82** / typed `version` → `app_about` (**INC-20260914-001**). |
 | **Install orchestrator SSOT** | `inst_perform_install` (+ prepare / download with or without checksum / atomic install) |
 | **Version compare** | `ver_gt` (pure POSIX); local version via `inst_get_version` |
 | **Install presence** | `inst_is_installed` |
 | **Paths** | `GLOBAL_BIN` default `/usr/local/bin`; `USER_BIN` default `${HOME}/.local/bin` |
-| **Repository identity** | `REPO_USER` default `cloudgen`; `REPO_NAME` default `sshd-cli` |
-| **Release channel** | `SCRIPT_URL` Config default composed as `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` (this project: `https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli` — product channel SSOT; override `SCRIPT_URL` or `REPO_*` via env if needed) |
+| **Repository identity** | `REPO_USER` default `cloudgen`; `REPO_NAME` default `key-cli` |
+| **Release channel** | `SCRIPT_URL` Config default composed as `https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}` (this project: `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli` — product channel SSOT; override `SCRIPT_URL` or `REPO_*` via env if needed) |
 | **Strict digest pin** | Runtime `CHECKSUM` when set in process env → `inst_perform_install_download_with_checksum` (secondary install-path only; **not** shown in `help`/`about`; see automatic-checksum requirement) |
 | **Companion digest** | Default `${SCRIPT_URL}.sha256` via `inst_perform_install_download_without_checksum` — law + transparency: `requirement-shell-automatic-checksum.md` |
 | **Force reinstall** | `FORCE_REINSTALL`; CLI `--force` required by CLI interface requirement |
@@ -179,7 +179,7 @@ inst_perform_install
 |------|--------|
 | Downgrade gate via `ver_gt` (refuse unless `--force`) | **Implemented** in `inst_self_update` (2026-07-12) |
 | CLI `--force` → `FORCE` / `FORCE_REINSTALL` | **Implemented** in `app_main` |
-| `SCRIPT_URL` default channel URL | **This project:** non-empty product default composed from `REPO_USER` / `REPO_NAME` / `APP_NAME` (`https://raw.githubusercontent.com/cloudgen/sshd-cli/main/sshd-cli`); product README must show simple literal one-liner(s) from that SSOT; env may still override |
+| `SCRIPT_URL` default channel URL | **This project:** non-empty product default composed from `REPO_USER` / `REPO_NAME` / `APP_NAME` (`https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli`); product README must show simple literal one-liner(s) from that SSOT; env may still override |
 
 ### 2.9 Why This Requirement Exists (Direct CIAO Alignment)
 
@@ -216,7 +216,7 @@ When the ship unit detects a **command line for normal user only** (Termux, Git 
 | Termux: named `pkg` as this login remains Type 0 | Recommend `sudo curl \| sh` as the install path |
 | Git Bash / Windows cmd: same privilege ceiling | Invoke Termux `pkg` because Git Bash or Windows cmd was detected |
 
-Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_cmd`, `sshd_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
+Helpers (this product): `key_is_termux`, `key_is_git_bash`, `key_is_windows_cmd`, `key_is_normal_user_only_cli`. Dual mention: `requirement-shell-cli-interface` · `requirement-shell-termux-ish`.
 
 **This requirement:** `install` / `self-update` / `self-uninstall` / `about` stay Type 0; place into this-login `USER_BIN` (or Termux `$PREFIX` when that is the user bin); **MUST NOT** recommend `sudo curl | sh`.
 
@@ -247,7 +247,7 @@ Helpers (this product): `sshd_is_termux`, `sshd_is_git_bash`, `sshd_is_windows_c
 
 ## 5. Definition of done (shell self-management)
 
-Work claiming self-management support for sshd-cli is **not done** if any of the following fail:
+Work claiming self-management support for key-cli is **not done** if any of the following fail:
 
 1. User-facing lifecycle commands exist and are routed (`version-check`, `self-update`, `self-uninstall`, `about`).  
 2. Update path verifies integrity (pinned and/or companion digest policy) and uses atomic replace via install SSOT.  
@@ -274,7 +274,7 @@ Work claiming self-management support for sshd-cli is **not done** if any of the
 | `docs/requirements/index.md` | Registry SSOT |
 | `docs/requirements/requirement-shell-termux-ish.md` | Termux `pkg` invoke contract |
 | `docs/requirements/requirement-domain-sshd.md` | Termux package names; start sshd after |
-| `./sshd-cli` | Implementation under test |
+| `./key-cli` | Implementation under test |
 
 ## Design-time verification
 
@@ -289,5 +289,5 @@ Work claiming self-management support for sshd-cli is **not done** if any of the
 ---
 
 **Last Updated**: 2026-09-09 (PATH/profile bodies → `requirement-shell-path-and-shell-support`)  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO Principles 1, 2, 3, 5, 10, 11, 14, 4, 20 (v2.10.2) (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

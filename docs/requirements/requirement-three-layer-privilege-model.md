@@ -110,8 +110,8 @@ On Termux / Git Bash / Windows cmd these verbs **MUST** fail closed and the TTY 
 | `docs/requirements/index.md` | Registry |
 | `docs/requirements/requirement-shell-sudoer.md` | **SSOT** — sudoer verbs / JSON / wrap |
 | `docs/requirements/requirement-shell-cli-interface.md` | Dual mention |
-| `./sshd-cli` | Ship unit |
+| `./key-cli` | Ship unit |
 
 **Last Updated**: 2026-09-11  
-**Owner**: sshd-cli project maintainers  
+**Owner**: key-cli project maintainers  
 **Alignment**: Registry `docs/requirements/index.md`; CIAO (https://github.com/cloudgen/ciao); CIAO-Lite (https://github.com/cloudgen/ciao-lite).

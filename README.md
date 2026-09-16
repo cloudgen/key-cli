@@ -1,6 +1,6 @@
 # key-cli - Backup and restore SSH user keys
 
-![Version](https://img.shields.io/badge/Version-2.0.2-blue?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.0.3-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 
@@ -23,7 +23,7 @@
 | Archive this login | sudo of the product command writes `/var/key-cli/<user>/ssh-YYYYMMDD-N.tar.gz` | `key-cli backup` |
 | Put it back | Extract a named archive | `key-cli restore list` then `key-cli --force restore ssh-YYYYMMDD-N.tar.gz` |
 
-Runtime version SSOT: `VERSION="2.0.2"` in `./key-cli`. Install channel SSOT: `SCRIPT_URL` default `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli`. Philosophy: **[CIAO](https://github.com/cloudgen/ciao) v2.10.2** with [CIAO-Lite](https://github.com/cloudgen/ciao-lite). Specialized from bootstrap origin **selfmanaged** (A → B only).
+Runtime version SSOT: `VERSION="2.0.3"` in `./key-cli`. Install channel SSOT: `SCRIPT_URL` default `https://raw.githubusercontent.com/cloudgen/key-cli/main/key-cli`. Philosophy: **[CIAO](https://github.com/cloudgen/ciao) v2.10.2** with [CIAO-Lite](https://github.com/cloudgen/ciao-lite). Specialized from bootstrap origin **selfmanaged** (A → B only).
 
 ## Features
 
@@ -80,7 +80,7 @@ After install, on a terminal (no arguments opens the menu):
 
 ```text
 $ key-cli
-[INFO] **key-cli**(*2.0.2*)
+[INFO] **key-cli**(*2.0.3*)
 1. **keys**: *this login ~/.ssh backup, restore, authorized_keys*
 8. **self-management**: *this CLI install, version, update, uninstall*
 9. Exit
@@ -90,7 +90,7 @@ Choose a number, or type the command name:
 `1` opens keys (POSIX Linux):
 
 ```text
-[INFO] **key-cli**(*2.0.2*) — keys
+[INFO] **key-cli**(*2.0.3*) — keys
 11. **backup**: *archive this login ~/.ssh into /var/key-cli*
 12. **restore**: *extract an archive back into this login ~/.ssh*
 13. **auth-keys**: *this login authorized_keys*

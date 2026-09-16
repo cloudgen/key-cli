@@ -11,7 +11,7 @@ Public product review surface (peer of `tests/`).
 | `index.md` | Report index |
 | `reports/` | Dated review run reports |
 
-**Ship unit:** `src/key-cli` / `./key-cli` (**VERSION 2.0.2**)  
+**Ship unit:** `src/key-cli` / `./key-cli` (**VERSION 2.0.3**)  
 **Suite:** `./tests/run.sh`  
 **Last suite baseline:** see `test-plan.md`
 
